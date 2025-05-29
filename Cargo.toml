@@ -1,0 +1,21 @@
+[package]
+name = "demo_composite_hid_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ch32-hal = { git="https://github.com/ch32-rs/ch32-hal", features = [
+    "ch32v003f4u6",
+    "memory-x",
+    # "time-driver-tim2",
+    "rt",
+] }
+qingke = "*"
+qingke-rt = { version = "*", features = ["highcode"] }
+panic-halt = "1.0"
+embedded-hal = "1.0.0"
+
+[profile.release]
+strip = false   # symbols are not flashed to the microcontroller, so don't strip them.
+lto = true
+opt-level = "s" # Optimize for size.
