@@ -8,7 +8,9 @@ ADDITIONAL_C_FILES_SRC=../rv003usb/rv003usb.S ../rv003usb/rv003usb.c
 EXTRA_CFLAGS:=-I../lib -I../rv003usb -fno-lto
 
 # List of source files to compile
-C_SOURCES =  $(filter %.c, $(ADDITIONAL_C_FILES_SRC)) $(CH32FUN)/ch32fun.c
+# DO NOT link in ch32fun.c, as it contains another handle_reset which is linked
+# instead of the qingke-rt one and breaks interrupts
+C_SOURCES = $(filter %.c, $(ADDITIONAL_C_FILES_SRC))
 S_SOURCES = $(filter %.S, $(ADDITIONAL_C_FILES_SRC))
 
 # Corresponding object files

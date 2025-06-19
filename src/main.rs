@@ -24,9 +24,6 @@ pub struct rv003usb_internal {
     _unused: u32,
 }
 extern "C" {
-    pub fn SystemInit();
-    //pub fn DelayMs(delay: cty::i_cint);
-    pub fn DelaySysTick(n: u32);
     pub fn usb_setup();
     pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
     pub fn usb_send_empty(token: u32);
@@ -44,21 +41,10 @@ fn main() -> ! {
 
     let mut led1 = Output::new(p.PA1, Level::Low, Default::default());
     let mut led2 = Output::new(p.PC0, Level::Low, Default::default());
-    // Disable interupt nesting and HPE
-    unsafe {
-        core::arch::asm!(
-            "
-            li t0, 0x0
-            csrw 0x804, t0
-            "
-        );
-    }
-    unsafe { SystemInit() }
 
     unsafe {
         usb_setup();
     }
-    machine::disable();
     loop {
         led1.toggle();
         delay.delay_ms(1000);
