@@ -5,9 +5,9 @@
 // For two EPs, this should be 3.
 #define ENDPOINTS 3
 
-#define USB_PORT D      // [A,C,D] GPIO Port to use with D+, D- and DPU
-#define USB_PIN_DP 4    // [0-4] GPIO Number for USB D+ Pin
-#define USB_PIN_DM 3    // [0-4] GPIO Number for USB D- Pin
+#define USB_PORT D    // [A,C,D] GPIO Port to use with D+, D- and DPU
+#define USB_PIN_DP 4  // [0-4] GPIO Number for USB D+ Pin
+#define USB_PIN_DM 3  // [0-4] GPIO Number for USB D- Pin
 #define USB_PIN_DPU 5 // [0-7] GPIO for feeding the 1.5k Pull-Up on USB D-
 // Pin; Comment out if not used / tied to 3V3!
 
@@ -20,11 +20,11 @@
 
 #ifndef __ASSEMBLER__
 
-#include <tinyusb_hid.h>
+#include <rv003usb/tinyusb_hid.h>
 
 #ifdef INSTANCE_DESCRIPTORS
-    // Taken from http://www.usbmadesimple.co.uk/ums_ms_desc_dev.htm
-    static const uint8_t device_descriptor[] = {
+// Taken from http://www.usbmadesimple.co.uk/ums_ms_desc_dev.htm
+static const uint8_t device_descriptor[] = {
     18,         // Length
     1,          // Type (Device)
     0x10, 0x01, // Spec

@@ -5,7 +5,9 @@
 use qingke::riscv::interrupt::machine;
 
 use hal::delay::Delay;
-use hal::gpio::{Level, Output};
+use hal::gpio::{Input, Level, Output, Pin, Pull, Speed};
+use hal::interrupt::Interrupt;
+use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 // Assumes RV003USB_OPTIMIZE_FLASH
 #[repr(C)]
@@ -21,14 +23,24 @@ pub struct usb_endpoint {
 }
 #[repr(C)]
 pub struct rv003usb_internal {
-    _unused: u32,
+    current_endpoint: u32,
+    my_address: u32,
+    setup_request: u32,
+    reserved: u32,
+    last_se0_cyccount: u32,
+    delta_se0_cyccount: i32,
+    se0_windup: u32,
+    eps: [usb_endpoint; 3], // ENDPOINTS
 }
+
 extern "C" {
+    static rv003usb_internal_data: *mut rv003usb_internal;
     pub fn usb_setup();
     pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
     pub fn usb_send_empty(token: u32);
 
 }
+const ENDPOINT0_SIZE: u32 = 8;
 
 #[qingke_rt::entry]
 fn main() -> ! {
@@ -42,9 +54,29 @@ fn main() -> ! {
     let mut led1 = Output::new(p.PA1, Level::Low, Default::default());
     let mut led2 = Output::new(p.PC0, Level::Low, Default::default());
 
+    // USB setup
+    let mut _usb_dp = Input::new(p.PD4, Pull::None);
+    let pin_number = p.PD3.pin() as usize;
+    let port_number = p.PD3.port();
+    let mut _usb_dm = Input::new(p.PD3, Pull::None);
+    let mut usb_dpu = Output::new(p.PD5, Level::Low, Speed::High);
     unsafe {
-        usb_setup();
+        (*rv003usb_internal_data).se0_windup = 0;
     }
+
+    let exti = &pac::EXTI;
+    let afio = &pac::AFIO;
+    afio.exticr()
+        .modify(|w| w.set_exti(pin_number, port_number));
+    //Warning: The interrupts perform HSI trimming and should run with 48MHz HSI settings
+    exti.intenr().modify(|w| w.set_mr(pin_number, true)); // enable interrupt
+    exti.ftenr().modify(|w| w.set_tr(pin_number, true));
+    exti.rtenr().modify(|w| w.set_tr(pin_number, false));
+
+    usb_dpu.set_high();
+    // EXTI7_0 is already enabled by the hal
+    // USB setup done
+
     loop {
         led1.toggle();
         delay.delay_ms(1000);
@@ -114,6 +146,43 @@ pub extern "C" fn usb_handle_user_in_request(
         unsafe {
             usb_send_empty(sendtok);
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn usb_pid_handle_in(
+    addr: u32,
+    data: *mut u8,
+    endp: u32,
+    unused: u32,
+    ist: *mut rv003usb_internal,
+) {
+    unsafe { (*ist).current_endpoint = endp };
+
+    let e = unsafe { &mut (*ist).eps[endp as usize] };
+    let sendtok = if e.toggle_in != 0 {
+        0b01001011
+    } else {
+        0b11000011
+    };
+    // if RV003USB_HANDLE_IN_REQUEST
+    if (e.custom != 0) || (endp != 0) {
+        usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
+        return;
+    }
+    // endif
+    let tsend = e.opaque;
+    let offset = e.count << 3;
+    let tosend = if (e.max_len - offset) > ENDPOINT0_SIZE {
+        ENDPOINT0_SIZE
+    } else {
+        e.max_len - offset
+    };
+    let sendnow = tsend.wrapping_add(offset as usize);
+    if (tosend <= 0) {
+        unsafe { usb_send_empty(sendtok) };
+    } else {
+        unsafe { usb_send_data(sendnow, tosend, 0, sendtok) };
     }
 }
 mod _vectors {

@@ -1,10 +1,10 @@
 all : lib
 
 TARGET_LIB:=librv003usb
-CH32FUN:=../ch32v003fun/ch32fun
+CH32FUN:=../rv003usb/ch32v003fun/ch32fun
 TARGET_MCU:=CH32V003
 
-ADDITIONAL_C_FILES_SRC=../rv003usb/rv003usb.S ../rv003usb/rv003usb.c
+ADDITIONAL_C_FILES_SRC=./rv003usb/rv003usb.S ./rv003usb/rv003usb.c
 EXTRA_CFLAGS:=-I../lib -I../rv003usb -fno-lto
 
 # List of source files to compile
