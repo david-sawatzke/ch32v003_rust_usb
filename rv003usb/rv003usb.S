@@ -6,9 +6,6 @@
 #define BSHR_OFFSET 16
 
 
-#define LOCAL_CONCAT(A, B) A##B
-#define LOCAL_EXP(A, B) LOCAL_CONCAT(A,B)
-
 #define SYSTICK_CNT 0xE000F008
 
 // This is 6 * n + 3 cycles
@@ -236,8 +233,6 @@ is_end_of_byte:
 	// end-of-byte.
 .balign 4
 bit_process:
-	// Debug blip
-//	c.lw a4, INDR_OFFSET(a5);
 	DEBUG_TICK_MARK
 	c.lw a0, INDR_OFFSET(a5);
 	c.andi a0, USB_DMASK;
@@ -847,64 +842,6 @@ insert_stuffed_bit:
 //////////////////////////////////////////////////////////////////////////////
 
 
-#ifdef USE_TINY_BOOT
-
-// Absolutely bare-bones hardware initialization for bringing the chip up,
-// setting up the environment for C, switching to 48MHz clock, and booting
-// into main... as well as providing EXTI7_0_IRQHandler jump at interrupt
-
-.section .init
-.global InterruptVector
-InterruptVector:
-	.align  2
-.option push
-.option norelax
-#if __GNUC__ > 10
-.option arch, +zicsr
-#endif
-	la sp, _eusrstack  // SP = 0x20000800
-	li a0, 0x80
-	csrw mstatus, a0
-	csrw mtvec, 3
-	addi a0, sp, -2048 // A0 = 0x20000000
-	addi gp, a0, 0x3fc // GP = 0x200003fc
-	c.li a4, 0
-1:	c.sw a4, 0(a0)	// Clear RAM
-	c.addi a0, 4
-	blt a0, gp, 1b  // Iterate over RAM until it's cleared.
-2:
-	//XXX WARNING: NO .DATA SECTION IS AVAILABLE HERE!
-	/* SystemInit48HSI */
-
-	// RCC_BASE     = 0x40021000
-	// FLASH_R_BASE = 0x40022000
-	// EXTEND       = 0x40023800
-	la a2, RCC_BASE
-	la a3, FLASH_R_BASE
-	li a1, 0x00000001 | 0x01000000 | 0x80 /* RCC->CTLR RCC_HSION | RCC_PLLON | ((HSITRIM) << 3) */
-	c.sw a1, 0(a2)
-	c.li a1, 0x01       /* FLASH_ACTLR_LATENCY_1 */
-	c.sw a1, 0(a3)      /* FLASH->ACTLR = FLASH_ACTLR_LATENCY_1 */
-	c.li a1, 0x00000002 /* RCC->CFGR0 = RCC_SW_PLL */
-	c.sw a1, 4(a2)
-	la a1, main
-	csrw mepc, a1
-.option pop
-	mret
-
-// CAREFUL THIS MUST BE EXACTLY AT 0x50
-. = 0x52 // Weird...  I don't know why this has to be 0x52, for it to be at 0x50.
-	.word EXTI7_0_IRQHandler            /* EXTI Line 7..0 */
-always0:
-	.byte 0x00 // Automatically expands out to 4 bytes.
-
-.align 0
-.balign 0
-
-#else
-
 .balign 4
 always0:
 	.word 0x00
-
-#endif
