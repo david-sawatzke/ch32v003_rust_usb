@@ -1,5 +1,68 @@
-#include "ch32fun.h"
 #include "rv003usb.h"
+// Taken from ch32v003fun
+
+#define PERIPH_BASE                             (0x40000000) /* Peripheral base address in the alias region */
+#define APB2PERIPH_BASE                         (PERIPH_BASE + 0x10000)
+#define EXTI_BASE                               (APB2PERIPH_BASE + 0x0400)
+#define GPIOA_BASE                              (APB2PERIPH_BASE + 0x0800)
+#define GPIOC_BASE                              (APB2PERIPH_BASE + 0x1000)
+#define GPIOD_BASE                              (APB2PERIPH_BASE + 0x1400)
+#define TIM1_BASE                               (APB2PERIPH_BASE + 0x2C00)
+
+// Let us do some compile-time error checking.
+#define ASM_ASSERT(COND)                                                       \
+    .if (!(COND));                                                             \
+    .err;                                                                      \
+    .endif
+
+// Integer encodings of the possible compressed registers.
+#define C_s0 0
+#define C_s1 1
+#define C_a0 2
+#define C_a1 3
+#define C_a2 4
+#define C_a3 5
+#define C_a4 6
+#define C_a5 7
+
+// register to encoding
+#define REG2I(X) (C_##X)
+
+// XW opcodes
+#define XW_OP_LBUSP 0b1000000000000000
+#define XW_OP_STSP 0b1000000001000000
+
+#define XW_OP_LHUSP 0b1000000000100000
+#define XW_OP_SHSP 0b1000000001100000
+
+#define XW_OP_LBU 0b0010000000000000
+#define XW_OP_SB 0b1010000000000000
+
+#define XW_OP_LHU 0b0010000000000010
+#define XW_OP_SH 0b1010000000000010
+
+// The two different XW encodings supported at the moment.
+#define XW_ENCODE1(OP, R1, R2, IMM)                                            \
+    ASM_ASSERT((IMM) >= 0 && (IMM) < 32);                                      \
+    .2byte((OP) | (REG2I(R1) << 2) | (REG2I(R2) << 7) |                        \
+           (((IMM) & 0b1) << 12) | (((IMM) & 0b110) << (5 - 1)) |              \
+           (((IMM) & 0b11000) << (10 - 3)))
+
+#define XW_ENCODE2(OP, R1, R2, IMM)                                                            \
+    ASM_ASSERT((IMM) >= 0 && (IMM) < 32); .2byte ((OP) | (REG2I(R1) << 2) | (REG2I(R2) << 7) | \
+	(((IMM) & 0b11) << 5) | (((IMM) & 0b11100) << (10 - 2))
+
+// Compressed load byte, zero-extend result
+#define XW_C_LBU(RD, RS, IMM) XW_ENCODE1(XW_OP_LBU, RD, RS, IMM)
+
+// Compressed store byte
+#define XW_C_SB(RS1, RS2, IMM) XW_ENCODE1(XW_OP_SB, RS1, RS2, IMM)
+
+// Compressed load half, zero-extend result
+#define XW_C_LHU(RD, RS, IMM)                                                  \
+    ASM_ASSERT(((IMM) & 1) == 0); XW_ENCODE2(XW_OP_LHU, RD, RS, ((IMM) >> 1)))
+
+// Done, now stuff taken from rv003usb follows
 
 #define CFGLR_OFFSET 0
 #define INDR_OFFSET 8

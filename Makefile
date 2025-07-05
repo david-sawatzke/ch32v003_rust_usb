@@ -1,24 +1,25 @@
 all : lib
 
 TARGET_LIB:=librv003usb
-CH32FUN:=../rv003usb/ch32v003fun/ch32fun
-TARGET_MCU:=CH32V003
-
-ADDITIONAL_C_FILES_SRC=./rv003usb/rv003usb.S ./rv003usb/rv003usb.c
-EXTRA_CFLAGS:=-I../lib -I../rv003usb -fno-lto
 
 # List of source files to compile
 # DO NOT link in ch32fun.c, as it contains another handle_reset which is linked
 # instead of the qingke-rt one and breaks interrupts
-C_SOURCES = $(filter %.c, $(ADDITIONAL_C_FILES_SRC))
-S_SOURCES = $(filter %.S, $(ADDITIONAL_C_FILES_SRC))
+C_SOURCES = ./rv003usb/rv003usb.c
+S_SOURCES = ./rv003usb/rv003usb.S
 
 # Corresponding object files
 C_OBJECTS = $(C_SOURCES:.c=.o)
 S_OBJECTS = $(S_SOURCES:.S=_s.o)
 OBJECTS = $(C_OBJECTS) $(S_OBJECTS)
 
-include $(CH32FUN)/ch32fun.mk
+PREFIX?=riscv64-elf
+CFLAGS?=-g -Os -ffunction-sections -fdata-sections -fmessage-length=0 -msmall-data-limit=8 \
+	-march=rv32ec_zicsr -mabi=ilp32e \
+	-static-libgcc \
+	-nostdlib \
+	-I. -Wall
+
 
 lib : $(TARGET_LIB).a
 
@@ -31,5 +32,5 @@ $(TARGET_LIB).a : $(OBJECTS)
 %_s.o : %.S
 	$(PREFIX)-gcc -c $(CFLAGS) $< -o $@
 
-flash : cv_flash
-clean : cv_clean
+clean:
+	rm $(TARGET_LIB).a $(OBJECTS)
