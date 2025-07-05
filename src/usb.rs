@@ -1,6 +1,9 @@
 use crate::usb_handle_user_in_request;
+use core::mem;
+#[no_mangle]
+#[used]
+pub static mut rv003usb_internal_data: rv003usb_internal = unsafe { mem::zeroed() };
 extern "C" {
-    pub static rv003usb_internal_data: *mut rv003usb_internal;
     pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
     pub fn usb_send_empty(token: u32);
 

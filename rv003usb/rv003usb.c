@@ -8,8 +8,7 @@
 #if !defined(RV003USB_CUSTOM_C) || RV003USB_CUSTOM_C == 0
 
 
-
-struct rv003usb_internal rv003usb_internal_data;
+extern struct rv003usb_internal rv003usb_internal_data;
 
 
 void usb_pid_handle_data( uint32_t this_token, uint8_t * data, uint32_t which_data, uint32_t length, struct rv003usb_internal * ist )

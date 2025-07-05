@@ -32,7 +32,7 @@ fn main() -> ! {
     let mut _usb_dm = Input::new(p.PD3, Pull::None);
     let mut usb_dpu = Output::new(p.PD5, Level::Low, Speed::High);
     unsafe {
-        (*rv003usb_internal_data).se0_windup = 0;
+        rv003usb_internal_data.se0_windup = 0;
     }
 
     let exti = &pac::EXTI;
