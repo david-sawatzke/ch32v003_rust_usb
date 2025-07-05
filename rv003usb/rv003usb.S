@@ -94,6 +94,8 @@
 .global usb_send_empty
 .global main
 .global always0
+// Temp globals as we move to rust
+.global done_usb_message_in
 
 /* Register map
 	zero, ra, sp, gp, tp, t0, t1, t2
@@ -512,32 +514,6 @@ interrupt_complete:
 // High level functions.
 
 #ifdef RV003USB_OPTIMIZE_FLASH
-/*
-void usb_pid_handle_ack( uint32_t dummy, uint8_t * data, uint32_t dummy1, uint32_t dummy2, struct rv003usb_internal * ist  )
-{
-	struct usb_endpoint * e = &ist->eps[ist->current_endpoint];
-	e->toggle_in = !e->toggle_in;
-	e->count++;
-	return;
-}
-*/
-
-usb_pid_handle_ack:
-	c.lw a2, 0(a4) //ist->current_endpoint -> endp;
-	c.slli a2, 5
-	c.add a2, a4
-	c.addi a2, ENDP_OFFSET // usb_endpoint eps[ENDPOINTS];
-
-	c.lw a0, (EP_TOGGLE_IN_OFFSET)(a2) // toggle_in=!toggle_in
-	c.li a1, 1
-	c.xor a0, a1
-	c.sw a0, (EP_TOGGLE_IN_OFFSET)(a2)
-
-	c.lw a0, (EP_COUNT_OFFSET)(a2) // count_in
-	c.addi a0, 1
-	c.sw a0, (EP_COUNT_OFFSET)(a2)
-
-	c.j done_usb_message_in
 
 /*
 //Received a setup for a specific endpoint.

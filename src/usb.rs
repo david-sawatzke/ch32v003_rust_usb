@@ -68,3 +68,35 @@ pub extern "C" fn usb_pid_handle_in(
         unsafe { usb_send_data(sendnow, tosend, 0, sendtok) };
     }
 }
+
+const ENDP_OFFSET: u8 = 28;
+const EP_COUNT_OFFSET: u8 = 0;
+const EP_TOGGLE_IN_OFFSET: u8 = 4;
+
+#[unsafe(naked)]
+#[no_mangle]
+pub unsafe extern "C" fn usb_pid_handle_ack(
+    dummy: u32,
+    data: *mut u8,
+    dummy1: u32,
+    dummy2: u32,
+    ist: *mut rv003usb_internal,
+) {
+    core::arch::naked_asm!(
+        "c.lw a2, 0(a4) //ist->current_endpoint -> endp;",
+        "c.slli a2, 5",
+        "c.add a2, a4",
+        "c.addi a2, {ENDP_OFFSET} // usb_endpoint eps[ENDPOINTS];",
+        "c.lw a0, ({EP_TOGGLE_IN_OFFSET})(a2) // toggle_in=!toggle_in",
+        "c.li a1, 1",
+        "c.xor a0, a1",
+        "c.sw a0, ({EP_TOGGLE_IN_OFFSET})(a2)",
+        "c.lw a0, ({EP_COUNT_OFFSET})(a2) // count_in",
+        "c.addi a0, 1",
+        "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
+        "c.j done_usb_message_in",
+            ENDP_OFFSET = const ENDP_OFFSET,
+            EP_TOGGLE_IN_OFFSET = const EP_TOGGLE_IN_OFFSET,
+            EP_COUNT_OFFSET = const EP_COUNT_OFFSET,
+    );
+}
