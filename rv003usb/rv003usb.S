@@ -9,59 +9,6 @@
 #define GPIOD_BASE                              (APB2PERIPH_BASE + 0x1400)
 #define TIM1_BASE                               (APB2PERIPH_BASE + 0x2C00)
 
-// Let us do some compile-time error checking.
-#define ASM_ASSERT(COND)                                                       \
-    .if (!(COND));                                                             \
-    .err;                                                                      \
-    .endif
-
-// Integer encodings of the possible compressed registers.
-#define C_s0 0
-#define C_s1 1
-#define C_a0 2
-#define C_a1 3
-#define C_a2 4
-#define C_a3 5
-#define C_a4 6
-#define C_a5 7
-
-// register to encoding
-#define REG2I(X) (C_##X)
-
-// XW opcodes
-#define XW_OP_LBUSP 0b1000000000000000
-#define XW_OP_STSP 0b1000000001000000
-
-#define XW_OP_LHUSP 0b1000000000100000
-#define XW_OP_SHSP 0b1000000001100000
-
-#define XW_OP_LBU 0b0010000000000000
-#define XW_OP_SB 0b1010000000000000
-
-#define XW_OP_LHU 0b0010000000000010
-#define XW_OP_SH 0b1010000000000010
-
-// The two different XW encodings supported at the moment.
-#define XW_ENCODE1(OP, R1, R2, IMM)                                            \
-    ASM_ASSERT((IMM) >= 0 && (IMM) < 32);                                      \
-    .2byte((OP) | (REG2I(R1) << 2) | (REG2I(R2) << 7) |                        \
-           (((IMM) & 0b1) << 12) | (((IMM) & 0b110) << (5 - 1)) |              \
-           (((IMM) & 0b11000) << (10 - 3)))
-
-#define XW_ENCODE2(OP, R1, R2, IMM)                                                            \
-    ASM_ASSERT((IMM) >= 0 && (IMM) < 32); .2byte ((OP) | (REG2I(R1) << 2) | (REG2I(R2) << 7) | \
-	(((IMM) & 0b11) << 5) | (((IMM) & 0b11100) << (10 - 2))
-
-// Compressed load byte, zero-extend result
-#define XW_C_LBU(RD, RS, IMM) XW_ENCODE1(XW_OP_LBU, RD, RS, IMM)
-
-// Compressed store byte
-#define XW_C_SB(RS1, RS2, IMM) XW_ENCODE1(XW_OP_SB, RS1, RS2, IMM)
-
-// Compressed load half, zero-extend result
-#define XW_C_LHU(RD, RS, IMM)                                                  \
-    ASM_ASSERT(((IMM) & 1) == 0); XW_ENCODE2(XW_OP_LHU, RD, RS, ((IMM) >> 1)))
-
 // Done, now stuff taken from rv003usb follows
 
 #define CFGLR_OFFSET 0
@@ -400,7 +347,7 @@ se0_complete:
 	// Now we have to decide what we're doing based on the
 	// packet type.
 	addi  a1, sp, DATA_PTR_OFFSET
-	XW_C_LBU(a0, a1, 0);	//lbu  a0, 0(a1)
+	lbu  a0, 0(a1)
 	c.addi a1, 1
 
 	// 0010 => 01001011 => ACK
@@ -429,7 +376,7 @@ may_be_a_token:
 	// Our CRC is 0, so we might be a token.
 
 	// Do token-y things.
-	XW_C_LHU( a2, a1, 0 )
+	lhu a2, 0(a1)
 	andi a0, a2, 0x7f // addr
 	c.srli a2, 7
 	c.andi a2, 0xf    // endp
@@ -437,7 +384,7 @@ may_be_a_token:
 	bgeu a2, s0, done_usb_message // Make sure < ENDPOINTS
 	c.beqz a0,  yes_check_tokens
 	// Otherwise, we might have our assigned address.
-	XW_C_LBU(s0, a4, MY_ADDRESS_OFFSET_BYTES);	//	lbu s0, MY_ADDRESS_OFFSET_BYTES(a4)
+	lbu s0, MY_ADDRESS_OFFSET_BYTES(a4)
 	bne s0, a0, done_usb_message // addr != 0 && addr != ours.
 yes_check_tokens:
 	addi a5, a5, (0b01001011-0b10000111)
@@ -547,8 +494,7 @@ usb_pid_handle_setup:
 //This will correctly swap back the endpoint.
 usb_pid_handle_out:
 	//void usb_pid_handle_out( uint32_t addr, uint8_t * data, uint32_t endp, uint32_t unused, struct rv003usb_internal * ist )	
-	//sb a2, 0(a4) //ist->current_endpoint = endp;
-	XW_C_SB( a2, a4, 0 ); // current_endpoint = endp
+	sb a2, 0(a4) //ist->current_endpoint = endp;
 	c.j done_usb_message_in
 
 
@@ -700,12 +646,8 @@ done_poly_check2:
 //	c.j send_inner_loop
 .balign 4
 load_next_byte:
-	// CH32v003 has the XW extension.
-	// this replaces: lb s0, 0(a0)
-	XW_C_LBU(s0, a0, 0);
-	//lb s0, 0(a0)
-	//	.long 0x00150513 // addi a0, a0, 1  (For alignment's sake)
-	c.addi a0, 1
+	lb s0, 0(a0)
+	.long 0x00150513 // addi a0, a0, 1  (For alignment's sake)
 send_inner_loop:
 	/* High-level:
 		* extract the LSB from s0
