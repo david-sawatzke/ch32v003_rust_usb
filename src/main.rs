@@ -9,38 +9,9 @@ use hal::gpio::{Input, Level, Output, Pin, Pull, Speed};
 use hal::interrupt::Interrupt;
 use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
-// Assumes RV003USB_OPTIMIZE_FLASH
-#[repr(C)]
-pub struct usb_endpoint {
-    count: u32,
-    toggle_in: u32,
-    toggle_out: u32,
-    custom: u32,
-    max_len: u32,
-    reserved1: u32,
-    reserved2: u32,
-    opaque: *mut u8,
-}
-#[repr(C)]
-pub struct rv003usb_internal {
-    current_endpoint: u32,
-    my_address: u32,
-    setup_request: u32,
-    reserved: u32,
-    last_se0_cyccount: u32,
-    delta_se0_cyccount: i32,
-    se0_windup: u32,
-    eps: [usb_endpoint; 3], // ENDPOINTS
-}
 
-extern "C" {
-    static rv003usb_internal_data: *mut rv003usb_internal;
-    pub fn usb_setup();
-    pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
-    pub fn usb_send_empty(token: u32);
-
-}
-const ENDPOINT0_SIZE: u32 = 8;
+mod usb;
+use usb::{rv003usb_internal, rv003usb_internal_data, usb_endpoint, usb_send_data, usb_send_empty};
 
 #[qingke_rt::entry]
 fn main() -> ! {
@@ -93,11 +64,11 @@ static mut TSAJOYSTICK_KEYBOARD: [u8; 8] = [0x00; 8];
 
 #[no_mangle]
 pub extern "C" fn usb_handle_user_in_request(
-    e: *mut usb_endpoint,
-    scratchpad: *mut u8,
+    _e: *mut usb_endpoint,
+    _scratchpad: *mut u8,
     endp: i32,
     sendtok: u32,
-    ist: *const rv003usb_internal,
+    _ist: *const rv003usb_internal,
 ) {
     if endp == 1 {
         // Mouse (4 bytes)
@@ -105,26 +76,28 @@ pub extern "C" fn usb_handle_user_in_request(
             I_MOUSE += 1;
             let mode = I_MOUSE >> 5;
 
+            TSAJOYSTICK_MOUSE[1] = 0;
+            TSAJOYSTICK_MOUSE[2] = 0;
             // Move the mouse right, down, left and up in a square.
-            match mode & 3 {
-                0 => {
-                    TSAJOYSTICK_MOUSE[1] = 1;
-                    TSAJOYSTICK_MOUSE[2] = 0;
-                }
-                1 => {
-                    TSAJOYSTICK_MOUSE[1] = 0;
-                    TSAJOYSTICK_MOUSE[2] = 1;
-                }
-                2 => {
-                    TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
-                    TSAJOYSTICK_MOUSE[2] = 0;
-                }
-                3 => {
-                    TSAJOYSTICK_MOUSE[1] = 0;
-                    TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
-                }
-                _ => {}
-            }
+            // match mode & 3 {
+            //     0 => {
+            //         TSAJOYSTICK_MOUSE[1] = 1;
+            //         TSAJOYSTICK_MOUSE[2] = 0;
+            //     }
+            //     1 => {
+            //         TSAJOYSTICK_MOUSE[1] = 0;
+            //         TSAJOYSTICK_MOUSE[2] = 1;
+            //     }
+            //     2 => {
+            //         TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
+            //         TSAJOYSTICK_MOUSE[2] = 0;
+            //     }
+            //     3 => {
+            //         TSAJOYSTICK_MOUSE[1] = 0;
+            //         TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
+            //     }
+            //     _ => {}
+            // }
             usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
         }
     } else if endp == 2 {
@@ -132,10 +105,10 @@ pub extern "C" fn usb_handle_user_in_request(
         unsafe {
             usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
 
-            I_KEYBOARD += 1;
+            //I_KEYBOARD += 1;
 
             // Press a Key every second or so.
-            if (I_KEYBOARD & 0x7f) == 0 {
+            if (I_KEYBOARD & 0x7f) == 1 {
                 TSAJOYSTICK_KEYBOARD[4] = 0x05; // 0x05 = "b"; 0x53 = NUMLOCK; 0x39 = CAPSLOCK;
             } else {
                 TSAJOYSTICK_KEYBOARD[4] = 0;
@@ -149,42 +122,6 @@ pub extern "C" fn usb_handle_user_in_request(
     }
 }
 
-#[no_mangle]
-pub extern "C" fn usb_pid_handle_in(
-    addr: u32,
-    data: *mut u8,
-    endp: u32,
-    unused: u32,
-    ist: *mut rv003usb_internal,
-) {
-    unsafe { (*ist).current_endpoint = endp };
-
-    let e = unsafe { &mut (*ist).eps[endp as usize] };
-    let sendtok = if e.toggle_in != 0 {
-        0b01001011
-    } else {
-        0b11000011
-    };
-    // if RV003USB_HANDLE_IN_REQUEST
-    if (e.custom != 0) || (endp != 0) {
-        usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
-        return;
-    }
-    // endif
-    let tsend = e.opaque;
-    let offset = e.count << 3;
-    let tosend = if (e.max_len - offset) > ENDPOINT0_SIZE {
-        ENDPOINT0_SIZE
-    } else {
-        e.max_len - offset
-    };
-    let sendnow = tsend.wrapping_add(offset as usize);
-    if (tosend <= 0) {
-        unsafe { usb_send_empty(sendtok) };
-    } else {
-        unsafe { usb_send_data(sendnow, tosend, 0, sendtok) };
-    }
-}
 mod _vectors {
     extern "C" {
         fn WWDG();
