@@ -461,35 +461,6 @@ interrupt_complete:
 ///////////////////////////////////////////////////////////////////////////////
 // High level functions.
 
-#ifdef RV003USB_OPTIMIZE_FLASH
-
-/*
-//Received a setup for a specific endpoint.
-void usb_pid_handle_setup( uint32_t addr, uint8_t * data, uint32_t endp, uint32_t unused, struct rv003usb_internal * ist )
-{
-	ist->current_endpoint = endp;
-	struct usb_endpoint * e = &ist->eps[endp];
-
-	e->toggle_out = 0;
-	e->count = 0;
-	e->toggle_in = 1;
-	ist->setup_request = 1;
-}*/
-usb_pid_handle_setup:
-	c.sw a2, 0(a4) // ist->current_endpoint = endp
-	c.li a1, 1
-	c.sw a1, SETUP_REQUEST_OFFSET(a4) //ist->setup_request = 1;
-	c.slli a2, 3+2
-	c.add a2, a4
-	c.sw a1, (ENDP_OFFSET+EP_TOGGLE_IN_OFFSET)(a2) //e->toggle_in = 1;
-	c.li a1, 0
-	c.sw a1, (ENDP_OFFSET+EP_COUNT_OFFSET)(a2)  //e->count = 0;
-	c.sw a1, (ENDP_OFFSET+EP_OPAQUE_OFFSET)(a2)  //e->opaque = 0;
-	c.sw a1, (ENDP_OFFSET+EP_TOGGLE_OUT_OFFSET)(a2) //e->toggle_out = 0;
-	c.j done_usb_message_in	
-
-#endif
-
 //We need to handle this here because we could have an interrupt in the middle of a control or big transfer.
 //This will correctly swap back the endpoint.
 usb_pid_handle_out:

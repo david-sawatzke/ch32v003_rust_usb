@@ -68,10 +68,6 @@ pub extern "C" fn usb_pid_handle_in(
     }
 }
 
-const ENDP_OFFSET: u8 = 28;
-const EP_COUNT_OFFSET: u8 = 0;
-const EP_TOGGLE_IN_OFFSET: u8 = 4;
-
 #[unsafe(naked)]
 #[no_mangle]
 pub unsafe extern "C" fn usb_pid_handle_ack(
@@ -94,9 +90,39 @@ pub unsafe extern "C" fn usb_pid_handle_ack(
         "c.addi a0, 1",
         "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
         "c.j done_usb_message_in",
-            ENDP_OFFSET = const ENDP_OFFSET,
-            EP_TOGGLE_IN_OFFSET = const EP_TOGGLE_IN_OFFSET,
-            EP_COUNT_OFFSET = const EP_COUNT_OFFSET,
+            ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
+            EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
+            EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
+    );
+}
+
+#[unsafe(naked)]
+#[no_mangle]
+pub unsafe extern "C" fn usb_pid_handle_setup(
+    addr: u32,
+    data: *mut u8,
+    endp: u32,
+    unused: u32,
+    ist: *mut rv003usb_internal,
+) {
+    core::arch::naked_asm!(
+    "c.sw a2, 0(a4) // ist->current_endpoint = endp",
+    "c.li a1, 1",
+        "c.sw a1, {SETUP_REQUEST_OFFSET}(a4) //ist->setup_request = 1;",
+    "c.slli a2, 3+2",
+    "c.add a2, a4",
+        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2) //e->toggle_in = 1;",
+    "c.li a1, 0",
+        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2)  //e->count = 0;",
+        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2)  //e->opaque = 0;",
+        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2) //e->toggle_out = 0;",
+    "c.j done_usb_message_in",
+    ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
+    SETUP_REQUEST_OFFSET = const mem::offset_of!(rv003usb_internal, setup_request),
+    EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
+    EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
+    EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(usb_endpoint, toggle_out),
+    EP_OPAQUE_OFFSET = const mem::offset_of!(usb_endpoint, opaque),
     );
 }
 
@@ -147,5 +173,5 @@ pub unsafe extern "C" fn handle_se0_keepalive() {
         LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
         DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
     );
-    // TODO offset with offset_from
+    // get periph register addresses from/to proper addr
 }
