@@ -128,50 +128,85 @@ pub unsafe extern "C" fn usb_pid_handle_setup(
 
 #[unsafe(naked)]
 #[no_mangle]
-pub unsafe extern "C" fn handle_se0_keepalive() {
+pub unsafe extern "C" fn usb_pid_handle_out(
+    addr: u32,
+    data: *mut u8,
+    endp: u32,
+    unused: u32,
+    ist: *mut rv003usb_internal,
+) {
     core::arch::naked_asm!(
-        // In here, we want to do smart stuff with the
-        // 1ms tick.
-        "la  a0, 0xE000F008", // SYSTICK_CNT
-        "la a4, rv003usb_internal_data",
-        "c.lw a1, {LAST_SE0_OFFSET}(a4) //last cycle count   last_se0_cyccount",
-        "c.lw a2, 0(a0) //this cycle coun",
-        "c.sw a2, {LAST_SE0_OFFSET}(a4) //store it back to last_se0_cyccount",
-        "c.sub a2, a1",
-        "c.sw a2, {DELTA_SE0_OFFSET}(a4) //record delta_se0_cyccount",
-        "li a1, 48000",
-        "c.sub a2, a1",
-        // This is our deviance from 48MHz.
-
-        // Make sure we aren't in left field.
-        "li a5, 4000",
-        "bge a2, a5, ret_from_se0",
-        "li a5, -4000",
-        "blt a2, a5, ret_from_se0",
-        "c.lw a1, {SE0_WINDUP_OFFSET}(a4) // load windup se0_windup",
-        "c.add a1, a2",
-        "c.sw a1, {SE0_WINDUP_OFFSET}(a4) // save windup",
-        // No further adjustments
-        "beqz a1, ret_from_se0",
-        // 0x40021000 = RCC.CTLR
-        "la a4, 0x40021000",
-        "lw a0, 0(a4)",
-        "srli a2, a0, 3 // Extract HSI Trim.",
-        "andi a2, a2, 0b11111",
-        "li a5, 0xffffff07",
-        "and a0, a0, a5 // Mask off non-HSI",
-        // Decimate windup - use as HSIrim.
-        "neg a1, a1",
-        "srai a2, a1, 9",
-        "addi a2, a2, 16  // add HSI offset.",
-        // Put trim in place in register.
-        "slli a2, a2, 3",
-        "or a0, a0, a2",
-        "sw a0, 0(a4)",
-        "j ret_from_se0",
-        SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
-        LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
-        DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
+        "c.sw a2, 0(a4) // ist->current_endpoint = endp",
+        "c.j done_usb_message_in"
     );
-    // get periph register addresses from/to proper addr
+}
+
+pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8> {}
+impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> {
+    // Advanced "pfusch" to force rust to make the generic and keep it until linker phase
+    // Hopefully can be dropped in the future
+    // I'm unsure if we can drop this entirely in the future
+    // Probably not for the interrupt handler?
+    pub(crate) fn make_funcs(&mut self) {
+        unsafe { core::arch::asm!("// {}", sym Self::handle_se0_keepalive) }
+    }
+    //#[unsafe(naked)]
+    //#[unsafe(link_section = ".text.vector_handler")]
+    //#[no_mangle]
+    //pub fn EXTI7_0_IRQHandler1() {
+    //core::arch::naked_asm!();
+    //}
+    #[allow(no_mangle_generic_items)]
+    #[no_mangle]
+    #[allow(named_asm_labels)]
+    #[unsafe(naked)]
+    pub(crate) unsafe extern "C" fn handle_se0_keepalive() {
+        core::arch::naked_asm!(
+            // Needed ...
+            ".global handle_se0_keepalive",
+            // In here, we want to do smart stuff with the
+            // 1ms tick.
+            "la  a0, 0xE000F008", // SYSTICK_CNT
+            "la a4, rv003usb_internal_data",
+            "c.lw a1, {LAST_SE0_OFFSET}(a4) //last cycle count   last_se0_cyccount",
+            "c.lw a2, 0(a0) //this cycle coun",
+            "c.sw a2, {LAST_SE0_OFFSET}(a4) //store it back to last_se0_cyccount",
+            "c.sub a2, a1",
+            "c.sw a2, {DELTA_SE0_OFFSET}(a4) //record delta_se0_cyccount",
+            "li a1, 48000",
+            "c.sub a2, a1",
+            // This is our deviance from 48MHz.
+
+            // Make sure we aren't in left field.
+            "li a5, 4000",
+            "bge a2, a5, ret_from_se0",
+            "li a5, -4000",
+            "blt a2, a5, ret_from_se0",
+            "c.lw a1, {SE0_WINDUP_OFFSET}(a4) // load windup se0_windup",
+            "c.add a1, a2",
+            "c.sw a1, {SE0_WINDUP_OFFSET}(a4) // save windup",
+            // No further adjustments
+            "beqz a1, ret_from_se0",
+            // 0x40021000 = RCC.CTLR
+            "la a4, 0x40021000",
+            "lw a0, 0(a4)",
+            "srli a2, a0, 3 // Extract HSI Trim.",
+            "andi a2, a2, 0b11111",
+            "li a5, 0xffffff07",
+            "and a0, a0, a5 // Mask off non-HSI",
+            // Decimate windup - use as HSIrim.
+            "neg a1, a1",
+            "srai a2, a1, 9",
+            "addi a2, a2, 16  // add HSI offset.",
+            // Put trim in place in register.
+            "slli a2, a2, 3",
+            "or a0, a0, a2",
+            "sw a0, 0(a4)",
+            "j ret_from_se0",
+            SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
+            LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
+            DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
+        );
+        // get periph register addresses from/to proper addr
+    }
 }

@@ -458,18 +458,6 @@ interrupt_complete:
 	addi	sp,sp,80
 	mret
 
-///////////////////////////////////////////////////////////////////////////////
-// High level functions.
-
-//We need to handle this here because we could have an interrupt in the middle of a control or big transfer.
-//This will correctly swap back the endpoint.
-usb_pid_handle_out:
-	//void usb_pid_handle_out( uint32_t addr, uint8_t * data, uint32_t endp, uint32_t unused, struct rv003usb_internal * ist )	
-	sb a2, 0(a4) //ist->current_endpoint = endp;
-	c.j done_usb_message_in
-
-
-
 //////////////////////////////////////////////////////////////////////////////
 // SEND DATA /////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////

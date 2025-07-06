@@ -11,7 +11,9 @@ use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 
 mod usb;
-use usb::{rv003usb_internal, rv003usb_internal_data, usb_endpoint, usb_send_data, usb_send_empty};
+use usb::{
+    rv003usb_internal, rv003usb_internal_data, usb_endpoint, usb_send_data, usb_send_empty, UsbIf,
+};
 
 #[qingke_rt::entry]
 fn main() -> ! {
@@ -31,8 +33,14 @@ fn main() -> ! {
     let port_number = p.PD3.port();
     let mut _usb_dm = Input::new(p.PD3, Pull::None);
     let mut usb_dpu = Output::new(p.PD5, Level::Low, Speed::High);
+    // This is GPIOD, but i haven't figured out how to do this nicely yet
+    let mut usb: UsbIf<0x4001_1400usize, 4, 3> = UsbIf {};
     unsafe {
         rv003usb_internal_data.se0_windup = 0;
+    }
+    // Do this here to force the rust compile to build them
+    unsafe {
+        usb.make_funcs();
     }
 
     let exti = &pac::EXTI;
