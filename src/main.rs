@@ -28,13 +28,13 @@ fn main() -> ! {
     let mut led2 = Output::new(p.PC0, Level::Low, Default::default());
 
     // USB setup
-    let mut _usb_dp = Input::new(p.PD4, Pull::None);
-    let pin_number = p.PD3.pin() as usize;
-    let port_number = p.PD3.port();
-    let mut _usb_dm = Input::new(p.PD3, Pull::None);
-    let mut usb_dpu = Output::new(p.PD5, Level::Low, Speed::High);
+    let mut _usb_dp = Input::new(p.PC3, Pull::None);
+    let pin_number = p.PC2.pin() as usize;
+    let port_number = p.PC2.port();
+    let mut _usb_dm = Input::new(p.PC2, Pull::None);
+    let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
-    let mut usb: UsbIf<0x4001_1400usize, 4, 3> = UsbIf {};
+    let mut usb: UsbIf<0x4001_1000usize, 3, 2> = UsbIf {};
     unsafe {
         rv003usb_internal_data.se0_windup = 0;
     }
