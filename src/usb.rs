@@ -31,6 +31,62 @@ pub struct rv003usb_internal {
     pub se0_windup: u32,
     eps: [usb_endpoint; 3], // ENDPOINTS
 }
+#[repr(C, packed)]
+pub struct usb_urb {
+    wRequestTypeLSBRequestMSB: u16,
+    lValueLSBIndexMSB: u32,
+    wLength: u16,
+}
+/*
+Needs to be able to get more from the config of descriptors
+ #[no_mangle]
+pub extern "C" fn usb_pid_handle_data(
+    this_token: u32,
+    data: *mut u8,
+    which_data: u32,
+    length: u32,
+    ist: *mut rv003usb_internal,
+) {
+    let epno = unsafe { (*ist).current_endpoint };
+
+    let e = unsafe { &mut (*ist).eps[epno as usize] };
+    let length = length - 3;
+    let data_in = data;
+
+    // Already received this packet.
+    if e.toggle_out != which_data {
+        unsafe {
+            usb_send_data(core::ptr::null(), 0, 2, 0xD2); // Send ACK
+        }
+        return;
+    }
+    e.toggle_out = !e.toggle_out;
+
+    if unsafe { (*ist).setup_request } != 0 {
+        let s = unsafe { &mut *(data as *mut usb_urb) };
+        let wvi = s.lValueLSBIndexMSB;
+        let wLength = s.wLength;
+        //Send just a data packet.
+        e.count = 0;
+        e.opaque = 0;
+        e.custom = 0;
+        e.max_len = 0;
+        unsafe { (*ist).setup_request = 0 };
+
+        // We shift down because we don't care if USB_RECIP_INTERFACE is set or not.
+        // Otherwise we have to write extra code to handle each case if it's set or
+        // not set, but in general, there's never a situation where we really care.
+        let reqShl = s.wRequestTypeLSBRequestMSB >> 1;
+        if reqShl == (0x0921 >> 1) {
+            // Class request (Will be writing)  This is hid_send_feature_report
+        } else if (reqShl == (0x0680 >> 1)) {
+            // TODO
+            for i in 0..DESCRIPTOR_LIST_ENTRIES {
+                descriptor_list
+            }
+        }
+    }
+}*/
 #[no_mangle]
 pub extern "C" fn usb_pid_handle_in(
     addr: u32,

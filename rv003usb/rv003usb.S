@@ -22,17 +22,10 @@
 #define nx6p3delay( n, freereg ) li freereg, ((n)+1); 1: c.addi freereg, -1; c.bnez freereg, 1b
 
 //See RV003USB_DEBUG_TIMING note in .c file.
-#if defined( RV003USB_DEBUG_TIMING ) && RV003USB_DEBUG_TIMING
-#define DEBUG_TICK_SETUP la x4, (TIM1_BASE + 0x24) 	// for debug
-#define DEBUG_TICK_MARK .balign 4; sw x0, 0(x4)
-#define	RESTORE_DEBUG_MARKER(x) lw	x4, x(sp)
-#define SAVE_DEBUG_MARKER(x)	sw	x4, x(sp)
-#else
 #define DEBUG_TICK_SETUP la x4, (TIM1_BASE + 0x58) 	// for debug (Go nowhere)
 #define DEBUG_TICK_MARK .balign 4; sw x0, 0(x4)
 #define	RESTORE_DEBUG_MARKER(x) lw	x4, x(sp)
 #define SAVE_DEBUG_MARKER(x)	sw	x4, x(sp)
-#endif
 
 .global test_memory
 .global rv003usb_internal_data
