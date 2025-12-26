@@ -1,19 +1,39 @@
 // Almost fully copied from rv003usb
-// TODO add licence
+// MIT License
+
+// Copyright (c) 2023 CNLohr
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 use crate::descriptors;
 use crate::usb_handle_user_in_request;
 use ch32_hal as hal;
 use core::mem;
 use hal::pac::{EXTI, TIM1};
 
-#[no_mangle]
 #[used]
 pub static mut rv003usb_internal_data: rv003usb_internal = unsafe { mem::zeroed() };
 extern "C" {
-    pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
     pub fn usb_send_empty(token: u32);
+    pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
 }
 const ENDPOINT0_SIZE: u32 = 8;
+
 // Assumes RV003USB_OPTIMIZE_FLASH
 #[repr(C)]
 pub struct usb_endpoint {
@@ -39,204 +59,29 @@ pub struct rv003usb_internal {
 }
 #[repr(C, packed)]
 pub struct usb_urb {
-    wRequestTypeLSBRequestMSB: u16,
-    lValueLSBIndexMSB: u32,
-    wLength: u16,
-}
-
-#[no_mangle]
-pub extern "C" fn usb_pid_handle_data(
-    this_token: u32,
-    data: *mut u8,
-    which_data: u32,
-    length: u32,
-    ist: *mut rv003usb_internal,
-) {
-    let epno = unsafe { (*ist).current_endpoint };
-
-    let e = unsafe { &mut (*ist).eps[epno as usize] };
-    let length = length - 3;
-    let data_in = data;
-
-    // Already received this packet.
-    if e.toggle_out != which_data {
-        unsafe {
-            usb_send_data(core::ptr::null(), 0, 2, 0xD2); // Send ACK
-        }
-        return;
-    }
-    e.toggle_out = !e.toggle_out;
-
-    if unsafe { (*ist).setup_request } != 0 {
-        let s = unsafe { &mut *(data as *mut usb_urb) };
-        let wvi = s.lValueLSBIndexMSB;
-        let wLength = s.wLength;
-        //Send just a data packet.
-        e.count = 0;
-        e.opaque = core::ptr::null_mut();
-        e.custom = 0;
-        e.max_len = 0;
-        unsafe { (*ist).setup_request = 0 };
-
-        // We shift down because we don't care if USB_RECIP_INTERFACE is set or not.
-        // Otherwise we have to write extra code to handle each case if it's set or
-        // not set, but in general, there's never a situation where we really care.
-        let reqShl = s.wRequestTypeLSBRequestMSB >> 1;
-        if reqShl == (0x0921 >> 1) {
-            // Class request (Will be writing)  This is hid_send_feature_report
-        } else if reqShl == (0x0680 >> 1) {
-            let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
-            e.opaque = descriptor_addr as *mut u8;
-            let sw_len = wLength as u32;
-            let el_len = descriptor_len as u32;
-            e.max_len = if sw_len < el_len { sw_len } else { el_len };
-        } else if reqShl == (0x0500 >> 1) {
-            // SET_ADDRESS = 0x05
-            unsafe { (*ist).my_address = wvi };
-        }
-    }
-    // Got the right data. Acknowledge.
-    unsafe { usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
-}
-#[no_mangle]
-pub extern "C" fn usb_pid_handle_in(
-    addr: u32,
-    data: *mut u8,
-    endp: u32,
-    _unused: u32,
-    ist: *mut rv003usb_internal,
-) {
-    unsafe { (*ist).current_endpoint = endp };
-
-    let e = unsafe { &mut (*ist).eps[endp as usize] };
-    let sendtok = if e.toggle_in != 0 {
-        0b01001011
-    } else {
-        0b11000011
-    };
-    // if RV003USB_HANDLE_IN_REQUEST
-    if (e.custom != 0) || (endp != 0) {
-        usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
-        return;
-    }
-    // endif
-    let tsend = e.opaque;
-    let offset = e.count << 3;
-    let tosend = if (e.max_len - offset) > ENDPOINT0_SIZE {
-        ENDPOINT0_SIZE
-    } else {
-        e.max_len - offset
-    };
-    let sendnow = tsend.wrapping_add(offset as usize);
-    if tosend <= 0 {
-        unsafe { usb_send_empty(sendtok) };
-    } else {
-        unsafe { usb_send_data(sendnow, tosend, 0, sendtok) };
-    }
-}
-
-#[unsafe(naked)]
-#[no_mangle]
-pub unsafe extern "C" fn usb_pid_handle_ack(
-    dummy: u32,
-    data: *mut u8,
-    dummy1: u32,
-    dummy2: u32,
-    ist: *mut rv003usb_internal,
-) {
-    core::arch::naked_asm!(
-        "c.lw a2, 0(a4) //ist->current_endpoint -> endp;",
-        "c.slli a2, 5",
-        "c.add a2, a4",
-        "c.addi a2, {ENDP_OFFSET} // usb_endpoint eps[ENDPOINTS];",
-        "c.lw a0, ({EP_TOGGLE_IN_OFFSET})(a2) // toggle_in=!toggle_in",
-        "c.li a1, 1",
-        "c.xor a0, a1",
-        "c.sw a0, ({EP_TOGGLE_IN_OFFSET})(a2)",
-        "c.lw a0, ({EP_COUNT_OFFSET})(a2) // count_in",
-        "c.addi a0, 1",
-        "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
-        "c.j done_usb_message_in",
-            ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
-            EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
-            EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
-    );
-}
-
-#[unsafe(naked)]
-#[no_mangle]
-pub unsafe extern "C" fn usb_pid_handle_setup(
-    addr: u32,
-    data: *mut u8,
-    endp: u32,
-    unused: u32,
-    ist: *mut rv003usb_internal,
-) {
-    core::arch::naked_asm!(
-    "c.sw a2, 0(a4) // ist->current_endpoint = endp",
-    "c.li a1, 1",
-        "c.sw a1, {SETUP_REQUEST_OFFSET}(a4) //ist->setup_request = 1;",
-    "c.slli a2, 3+2",
-    "c.add a2, a4",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2) //e->toggle_in = 1;",
-    "c.li a1, 0",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2)  //e->count = 0;",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2)  //e->opaque = 0;",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2) //e->toggle_out = 0;",
-    "c.j done_usb_message_in",
-    ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
-    SETUP_REQUEST_OFFSET = const mem::offset_of!(rv003usb_internal, setup_request),
-    EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
-    EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
-    EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(usb_endpoint, toggle_out),
-    EP_OPAQUE_OFFSET = const mem::offset_of!(usb_endpoint, opaque),
-    );
-}
-
-#[unsafe(naked)]
-#[no_mangle]
-pub unsafe extern "C" fn usb_pid_handle_out(
-    addr: u32,
-    data: *mut u8,
-    endp: u32,
-    unused: u32,
-    ist: *mut rv003usb_internal,
-) {
-    core::arch::naked_asm!(
-        "c.sw a2, 0(a4) // ist->current_endpoint = endp",
-        "c.j done_usb_message_in"
-    );
+    w_request_type_lsb_request_msb: u16,
+    l_value_lsb_index_msb: u32,
+    w_length: u16,
 }
 
 pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8> {}
 impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> {
-    // Advanced "pfusch" to force rust to make the generic and keep it until linker phase
+    // Advanced "pfusch" to force rust to make the functions of the generic and keep it until linker phase
     // Hopefully can be dropped in the future
     // I'm unsure if we can drop this entirely in the future
     // Probably not for the interrupt handler?
     pub(crate) fn make_funcs(&mut self) {
-        unsafe { core::arch::asm!("// {}", sym Self::handle_se0_keepalive) }
         unsafe { core::arch::asm!("// {}", sym Self::usb_send_empty) }
+        unsafe { core::arch::asm!("// {}", sym Self::usb_send_data) }
         unsafe { core::arch::asm!("// {}", sym Self::usb_interrupt_handler) }
     }
-    //#[unsafe(naked)]
-    //#[unsafe(link_section = ".text.vector_handler")]
-    //#[no_mangle]
-    //pub fn EXTI7_0_IRQHandler1() {
-    //core::arch::naked_asm!();
-    //}
-    #[allow(no_mangle_generic_items)]
-    #[no_mangle]
-    #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive() {
         core::arch::naked_asm!(
-            // Needed ...
-            ".global handle_se0_keepalive",
             // In here, we want to do smart stuff with the
             // 1ms tick.
             "la  a0, 0xE000F008", // SYSTICK_CNT
-            "la a4, rv003usb_internal_data",
+            "la a4, {rv003usb_internal_data}",
             "c.lw a1, {LAST_SE0_OFFSET}(a4) //last cycle count   last_se0_cyccount",
             "c.lw a2, 0(a0) //this cycle coun",
             "c.sw a2, {LAST_SE0_OFFSET}(a4) //store it back to last_se0_cyccount",
@@ -275,15 +120,38 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
             LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
             DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
+            rv003usb_internal_data = sym rv003usb_internal_data,
+
         );
         // TODO get periph register addresses from/to proper addr
     }
+
     #[allow(no_mangle_generic_items)]
     #[no_mangle]
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_send_empty() {
-        // Also contains usb_send_data
+    pub(crate) unsafe extern "C" fn usb_send_empty(token: u32) {
+        core::arch::naked_asm!(
+        ".global usb_send_empty",
+        "c.mv a3, a0",
+        "la a0, always0",
+        "li a1, 2",
+        "c.mv a2, a1",
+        "c.j {usb_send_data}",
+        usb_send_data = sym Self::usb_send_data
+        );
+    }
+
+    #[allow(no_mangle_generic_items)]
+    #[no_mangle]
+    #[allow(named_asm_labels)]
+    #[unsafe(naked)]
+    pub(crate) unsafe extern "C" fn usb_send_data(
+        data: *const u8,
+        length: u32,
+        poly_function: u32,
+        token: u32,
+    ) {
         core::arch::naked_asm!(
             ".macro nx6p3delay_usb_send n, freereg",
             "li \\freereg, ((\\n) + 1)",
@@ -291,16 +159,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.bnez \\freereg, 1b",
             ".endm",
             // Needed ...
-            ".global usb_send_empty",
             ".global usb_send_data",
             ".balign 4",
-            //void usb_send_empty( uint32_t token );
-            "c.mv a3, a0",
-            "la a0, always0",
-            "li a1, 2",
-            "c.mv a2, a1",
             //void usb_send_data( uint8_t * data, uint32_t length, uint32_t poly_function, uint32_t token );
-            "usb_send_data:",
             "addi	sp,sp,-16",
             "sw	s0, 0(sp)",
             "sw	s1, 4(sp)",
@@ -325,7 +186,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             "li t1, (1<<{USB_PIN_DP}) | (1<<({USB_PIN_DM}+16)) | (1<<{USB_PIN_DM}) | (1<<({USB_PIN_DP}+16));",
 
-            //"SAVE_DEBUG_MARKER( 8 )
 
             // Save off our preamble and token.
             "c.slli a3, 7    ", //Put token further up so it gets sent later.
@@ -343,7 +203,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             // t0 is our polynomial
             // a2 is our running CRC.
             // a3 is our token.
-            //"DEBUG_TICK_SETUP",
 
             "c.li a4, 6", // reset bit stuffing.
             "c.li a1, 15", // 15 bits.
@@ -542,7 +401,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             "lw	s0, 0(sp)",
             "lw	s1, 4(sp)",
-            //"RESTORE_DEBUG_MARKER( 8 )",
             "addi	sp,sp,16",
             "ret",
 
@@ -576,7 +434,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_interrupt_handler() {
-        // Also contains usb_send_data
         core::arch::naked_asm!(
 
         // This is 6 * n + 3 cycles
@@ -600,17 +457,15 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "sw	x4, \\x(sp)",
         ".endm",
 
-        ".global rv003usb_internal_data",
-        ".global rv003usb_handle_packet",
         // Temp globals as we move to rust
         ".global done_usb_message_in",
         ".global ret_from_se0",
 
-        "/* Register map",
-        "zero, ra, sp, gp, tp, t0, t1, t2",
-        "Compressed:",
-        "s0, s1,	a0, a1, a2, a3, a4, a5",
-        "*/",
+        /* Register map
+        zero, ra, sp, gp, tp, t0, t1, t2
+        Compressed:
+        s0, s1,	a0, a1, a2, a3, a4, a5
+        */
 
         ".global EXTI7_0_IRQHandler",
 
@@ -635,7 +490,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.andi a1, {USB_DMASK};",
 
         // Finish jump to se0
-        "c.beqz a0, handle_se0_keepalive",
+        "c.beqz a0, {handle_se0_keepalive}",
 
             "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
             "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
@@ -700,24 +555,20 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         //XXX NOTE: It actually wouldn't be too bad to insert an *extra* cycle here.
 
-        "/* register meanings:",
-        "	* x4 = TP = used for triggering debug.",
-
-        "	* T0 = Totally unushed.",
-        "	* T1 = TEMPORARY",
-        "	* T2 = Pointer to the memory address we are writing to.",
-
-        "	* A0 = temp / current bit value.",
-        "	* A1 = last-frame's GPIO values.",
-        "	* A2 = The running word ",
-        "	* A3 = Running CRC",
-        "	* a4 = Polynomial",
-        "	* A5 = GPIO Offset",
-
-        "	* S0 = Bit Stuff Place",
-        "	* S1 = # output bits remaining.",
-        "*/",
-
+        /* register meanings:
+            * x4 = TP = used for triggering debug
+            * T0 = Totally unushed.",
+            * T1 = TEMPORARY
+            * T2 = Pointer to the memory address we are writing to
+            * A0 = temp / current bit value.",
+            * A1 = last-frame's GPIO values.
+            * A2 = The running word
+            * A3 = Running CRC
+            * a4 = Polynomial
+            * A5 = GPIO Offset
+            * S0 = Bit Stuff Place",
+            * S1 = # output bits remaining.
+        */
         ".balign 4",
         "packet_type_loop:",
         // Up here to delay loop a tad, and we need to execute them anyway.
@@ -726,7 +577,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // up when possible.
         "li a3, 0xffff", // Starting CRC of 0.   Because USB doesn't respect reverse CRCing.
         "li a4, 0xa001",
-        "addi  t2, sp, {DATA_PTR_OFFSET}", //rv003usb_internal_data
+        "addi  t2, sp, {DATA_PTR_OFFSET}",
         "la  t0, 0x80",
         "c.nop",
 
@@ -917,10 +768,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         "RESTORE_DEBUG_MARKER 48 ", // restore x4 for whatever in C land.
 
-        "la a4, rv003usb_internal_data",
+        "la a4, {rv003usb_internal_data}",
 
         // ACK doesn't need good CRC.
-        "c.beqz a5, usb_pid_handle_ack",
+        "c.beqz a5, {usb_pid_handle_ack}",
 
         // Next, check for tokens.
         "c.bnez a3, crc_for_tokens_would_be_bad_maybe_data",
@@ -940,11 +791,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "bne s0, a0, done_usb_message", // addr != 0 && addr != ours.
         "yes_check_tokens:",
         "addi a5, a5, (0b01001011-0b10000111)",
-        "c.beqz a5, usb_pid_handle_out",
+        "c.beqz a5, {usb_pid_handle_out}",
         "c.addi a5, (0b10000111-0b10010110)",
-        "c.beqz a5, usb_pid_handle_in",
+        "c.beqz a5, {usb_pid_handle_in}",
         "c.addi a5, (0b10010110-0b10110100)",
-        "c.beqz a5, usb_pid_handle_setup",
+        "c.beqz a5, {usb_pid_handle_setup}",
 
         "c.j done_usb_message_in",
 
@@ -958,10 +809,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.addi a3, 1",
         "addi a5, a5, (0b01001011-0b11000011)",
         "c.li a2, 0",
-        "c.beqz a5, usb_pid_handle_data",
+        "c.beqz a5, {usb_pid_handle_data}",
         "c.addi a5, (0b11000011-0b11010010)",
         "c.li a2, 1",
-        "c.beqz a5, usb_pid_handle_data",
+        "c.beqz a5, {usb_pid_handle_data}",
 
         "done_usb_message:",
         "done_usb_message_in:",
@@ -1004,10 +855,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         ".purgem RESTORE_DEBUG_MARKER",
         ".purgem SAVE_DEBUG_MARKER",
 
-                    USB_GPIO_BASE            = const USB_BASE,
-                    USB_PIN_DP            = const DP,
-                    USB_PIN_DM            = const DM,
-                // A little weird, but this way, the USB packet is always aligned.
+            USB_GPIO_BASE = const USB_BASE,
+            USB_PIN_DM = const DM,
+            // A little weird, but this way, the USB packet is always aligned.
             DATA_PTR_OFFSET = const 59+4,
             MY_ADDRESS_OFFSET_BYTES = const 4,
             INDR_OFFSET = const 8,
@@ -1019,6 +869,171 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             // TIM1_BASE = const (TIM1.as_ptr()) as u32,
             EXTI_BASE = const 0x40010400,
             TIM1_BASE = const 0x40012C00,
-                );
+            usb_pid_handle_data = sym Self::usb_pid_handle_data,
+            usb_pid_handle_in = sym Self::usb_pid_handle_in,
+            usb_pid_handle_out = sym Self::usb_pid_handle_out,
+            usb_pid_handle_ack = sym Self::usb_pid_handle_ack,
+            usb_pid_handle_setup = sym Self::usb_pid_handle_setup,
+            rv003usb_internal_data = sym rv003usb_internal_data,
+            handle_se0_keepalive = sym Self::handle_se0_keepalive,
+        );
+    }
+    pub extern "C" fn usb_pid_handle_in(
+        addr: u32,
+        data: *mut u8,
+        endp: u32,
+        _unused: u32,
+        ist: *mut rv003usb_internal,
+    ) {
+        unsafe { (*ist).current_endpoint = endp };
+
+        let e = unsafe { &mut (*ist).eps[endp as usize] };
+        let sendtok = if e.toggle_in != 0 {
+            0b01001011
+        } else {
+            0b11000011
+        };
+        // if RV003USB_HANDLE_IN_REQUEST
+        if (e.custom != 0) || (endp != 0) {
+            usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
+            return;
+        }
+        // endif
+        let tsend = e.opaque;
+        let offset = e.count << 3;
+        let tosend = if (e.max_len - offset) > ENDPOINT0_SIZE {
+            ENDPOINT0_SIZE
+        } else {
+            e.max_len - offset
+        };
+        let sendnow = tsend.wrapping_add(offset as usize);
+        if tosend <= 0 {
+            unsafe { Self::usb_send_empty(sendtok) };
+        } else {
+            unsafe { Self::usb_send_data(sendnow, tosend, 0, sendtok) };
+        }
+    }
+    pub extern "C" fn usb_pid_handle_data(
+        this_token: u32,
+        data: *mut u8,
+        which_data: u32,
+        length: u32,
+        ist: *mut rv003usb_internal,
+    ) {
+        let epno = unsafe { (*ist).current_endpoint };
+
+        let e = unsafe { &mut (*ist).eps[epno as usize] };
+        let length = length - 3;
+        let data_in = data;
+
+        // Already received this packet.
+        if e.toggle_out != which_data {
+            unsafe {
+                Self::usb_send_data(core::ptr::null(), 0, 2, 0xD2); // Send ACK
+            }
+            return;
+        }
+        e.toggle_out = !e.toggle_out;
+
+        if unsafe { (*ist).setup_request } != 0 {
+            let s = unsafe { &mut *(data as *mut usb_urb) };
+            let wvi = s.l_value_lsb_index_msb;
+            let w_length = s.w_length;
+            //Send just a data packet.
+            e.count = 0;
+            e.opaque = core::ptr::null_mut();
+            e.custom = 0;
+            e.max_len = 0;
+            unsafe { (*ist).setup_request = 0 };
+
+            // We shift down because we don't care if USB_RECIP_INTERFACE is set or not.
+            // Otherwise we have to write extra code to handle each case if it's set or
+            // not set, but in general, there's never a situation where we really care.
+            let req_shl = s.w_request_type_lsb_request_msb >> 1;
+            if req_shl == (0x0921 >> 1) {
+                // Class request (Will be writing)  This is hid_send_feature_report
+            } else if req_shl == (0x0680 >> 1) {
+                let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
+                e.opaque = descriptor_addr as *mut u8;
+                let sw_len = w_length as u32;
+                let el_len = descriptor_len as u32;
+                e.max_len = if sw_len < el_len { sw_len } else { el_len };
+            } else if req_shl == (0x0500 >> 1) {
+                // SET_ADDRESS = 0x05
+                unsafe { (*ist).my_address = wvi };
+            }
+        }
+        // Got the right data. Acknowledge.
+        unsafe { Self::usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
+    }
+
+    #[unsafe(naked)]
+    pub unsafe extern "C" fn usb_pid_handle_ack(
+        dummy: u32,
+        data: *mut u8,
+        dummy1: u32,
+        dummy2: u32,
+        ist: *mut rv003usb_internal,
+    ) {
+        core::arch::naked_asm!(
+            "c.lw a2, 0(a4)", //ist->current_endpoint -> endp;
+            "c.slli a2, 5",
+            "c.add a2, a4",
+            "c.addi a2, {ENDP_OFFSET}", // usb_endpoint eps[ENDPOINTS];
+            "c.lw a0, ({EP_TOGGLE_IN_OFFSET})(a2)", // toggle_in=!toggle_in
+            "c.li a1, 1",
+            "c.xor a0, a1",
+            "c.sw a0, ({EP_TOGGLE_IN_OFFSET})(a2)",
+            "c.lw a0, ({EP_COUNT_OFFSET})(a2)", // count_in
+            "c.addi a0, 1",
+            "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
+            "c.j done_usb_message_in",
+                ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
+                EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
+                EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
+        );
+    }
+
+    #[unsafe(naked)]
+    pub unsafe extern "C" fn usb_pid_handle_setup(
+        addr: u32,
+        data: *mut u8,
+        endp: u32,
+        unused: u32,
+        ist: *mut rv003usb_internal,
+    ) {
+        core::arch::naked_asm!(
+        "c.sw a2, 0(a4)", // ist->current_endpoint = endp
+        "c.li a1, 1",
+            "c.sw a1, {SETUP_REQUEST_OFFSET}(a4)", //ist->setup_request = 1;
+        "c.slli a2, 3+2",
+        "c.add a2, a4",
+            "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2)", //e->toggle_in = 1;
+        "c.li a1, 0",
+            "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2) ", //e->count = 0;
+            "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2) ", //e->opaque = 0;
+            "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
+        "c.j done_usb_message_in",
+        ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
+        SETUP_REQUEST_OFFSET = const mem::offset_of!(rv003usb_internal, setup_request),
+        EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
+        EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
+        EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(usb_endpoint, toggle_out),
+        EP_OPAQUE_OFFSET = const mem::offset_of!(usb_endpoint, opaque),
+        );
+    }
+
+    #[unsafe(naked)]
+    pub unsafe extern "C" fn usb_pid_handle_out(
+        addr: u32,
+        data: *mut u8,
+        endp: u32,
+        unused: u32,
+        ist: *mut rv003usb_internal,
+    ) {
+        core::arch::naked_asm!(
+            "c.sw a2, 0(a4)", // ist->current_endpoint = endp
+            "c.j done_usb_message_in"
+        );
     }
 }

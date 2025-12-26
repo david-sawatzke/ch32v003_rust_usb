@@ -71,8 +71,7 @@ static mut TSAJOYSTICK_MOUSE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
 static mut I_KEYBOARD: i32 = 0;
 static mut TSAJOYSTICK_KEYBOARD: [u8; 8] = [0x00; 8];
 
-#[no_mangle]
-pub extern "C" fn usb_handle_user_in_request(
+fn usb_handle_user_in_request(
     _e: *mut usb_endpoint,
     _scratchpad: *mut u8,
     endp: i32,
