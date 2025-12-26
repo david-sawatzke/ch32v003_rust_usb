@@ -52,7 +52,7 @@
 #define RV003USB_USB_TERMINAL 0
 #endif
 
-
+/*
 #ifndef __ASSEMBLER__
 
 extern uint32_t * always0;
@@ -108,6 +108,7 @@ uint32_t * GetUEvent();
 #endif
 
 #endif
+*/
 
 
 // Internal stuff.
@@ -138,6 +139,7 @@ uint32_t * GetUEvent();
 #define SE0_WINDUP_OFFSET       12
 #endif
 
+/*
 #ifndef __ASSEMBLER__
 
 #define EMPTY_SEND_BUFFER (uint8_t*)1
@@ -208,6 +210,6 @@ extern struct rv003usb_internal rv003usb_internal_data;
 
 
 #endif
-
+*/
 #endif
 
