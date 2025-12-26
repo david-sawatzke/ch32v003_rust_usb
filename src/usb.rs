@@ -883,11 +883,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         _unused: u32,
-        ist: *mut rv003usb_internal,
+        ist: &mut rv003usb_internal,
     ) {
-        unsafe { (*ist).current_endpoint = endp };
+        ist.current_endpoint = endp;
 
-        let e = unsafe { &mut (*ist).eps[endp as usize] };
+        let e = &mut ist.eps[endp as usize];
         let sendtok = if e.toggle_in != 0 {
             0b01001011
         } else {
@@ -918,13 +918,12 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         which_data: u32,
         length: u32,
-        ist: *mut rv003usb_internal,
+        ist: &mut rv003usb_internal,
     ) {
-        let epno = unsafe { (*ist).current_endpoint };
+        let epno = ist.current_endpoint;
 
-        let e = unsafe { &mut (*ist).eps[epno as usize] };
+        let e = &mut ist.eps[epno as usize];
         let length = length - 3;
-        let data_in = data;
 
         // Already received this packet.
         if e.toggle_out != which_data {
@@ -935,7 +934,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         }
         e.toggle_out = !e.toggle_out;
 
-        if unsafe { (*ist).setup_request } != 0 {
+        if ist.setup_request != 0 {
             let s = unsafe { &mut *(data as *mut usb_urb) };
             let wvi = s.l_value_lsb_index_msb;
             let w_length = s.w_length;
@@ -944,7 +943,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             e.opaque = core::ptr::null_mut();
             e.custom = 0;
             e.max_len = 0;
-            unsafe { (*ist).setup_request = 0 };
+            ist.setup_request = 0;
 
             // We shift down because we don't care if USB_RECIP_INTERFACE is set or not.
             // Otherwise we have to write extra code to handle each case if it's set or
@@ -960,7 +959,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
                 e.max_len = if sw_len < el_len { sw_len } else { el_len };
             } else if req_shl == (0x0500 >> 1) {
                 // SET_ADDRESS = 0x05
-                unsafe { (*ist).my_address = wvi };
+                ist.my_address = wvi;
             }
         }
         // Got the right data. Acknowledge.
@@ -973,7 +972,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         dummy1: u32,
         dummy2: u32,
-        ist: *mut rv003usb_internal,
+        ist: &mut rv003usb_internal,
     ) {
         core::arch::naked_asm!(
             "c.lw a2, {CURRENT_ENDP_OFFSET}(a4)", //ist->current_endpoint -> endp;
@@ -1001,7 +1000,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         unused: u32,
-        ist: *mut rv003usb_internal,
+        ist: &mut rv003usb_internal,
     ) {
         core::arch::naked_asm!(
         "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
@@ -1031,7 +1030,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         unused: u32,
-        ist: *mut rv003usb_internal,
+        ist: &mut rv003usb_internal,
     ) {
         core::arch::naked_asm!(
             "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
