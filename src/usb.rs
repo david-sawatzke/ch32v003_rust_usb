@@ -582,7 +582,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         "DEBUG_TICK_MARK",
         "c.lw a0, {INDR_OFFSET}(a5);",
-            "c.andi a0, {USB_DMASK};",
+        "c.andi a0, {USB_DMASK};",
         "c.beqz a0, done_usb_message", // Not se0 complete, that can't happen here and be valid.
         "c.xor a0, a1;",
         "c.xor a1, a0;", // Recover a1, for next cycle
@@ -592,8 +592,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         //c.srli a0, {USB_PIN_DP}
         //c.addi a0, 1 // 00 -> 1, 11 -> 100
         //c.andi a0, 1 // If 1, 1 if 0, 0
-                "c.nop",
-                "seqz a0, a0",
+        "c.nop",
+        "seqz a0, a0",
 
         // Write header into byte in reverse order, because we can.
         "c.slli a2, 1",
@@ -612,7 +612,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         // XXX Here, figure out CRC polynomial.
 
-            "li s1, ({USB_BUFFER_SIZE}*8)", // # of bits we culd read.
+        "li s1, ({USB_BUFFER_SIZE}*8)", // # of bits we culd read.
 
         // WARNING: a0 is bit-wise backwards here.
         // 0xb4 for instance is a setup packet.
@@ -649,7 +649,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "bit_process:",
         "DEBUG_TICK_MARK",
         "c.lw a0, {INDR_OFFSET}(a5);",
-            "c.andi a0, {USB_DMASK};",
+        "c.andi a0, {USB_DMASK};",
         "c.xor a0, a1;",
 
         //XXX GOOD
@@ -658,7 +658,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "andi a0, s1, 7; /* s1 could be really really big */",
         "c.\\jumptype a0, \\is_end_of_byte /* 4 cycles for this section. (Checked) (Sometimes 5)? */ ",
         ".endm",
-           " ",
+
         "c.beqz a0, handle_one_bit",
         "handle_zero_bit:",
         "c.xor a1, a0;", // Recover a1, for next cycle
@@ -670,7 +670,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // I was thinking we could put the resync code here.
         "c.j 1f; 1: ", //Delay 4 cycles.
 
-        "c.li s0, 6     ", // reset runs-of-one.
+        "c.li s0, 6", // reset runs-of-one.
         "c.beqz a1, se0_complete",
 
         // Handle CRC (0 bit)  (From @Domkeykong)
@@ -718,21 +718,21 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "HANDLE_EOB_YES",
 
         "not_is_end_of_byte_and_bit_stuffed:",
-                "DEBUG_TICK_MARK",
+        "DEBUG_TICK_MARK",
         "c.lw a0, {INDR_OFFSET}(a5);",
-            "c.andi a0, {USB_DMASK};",
+        "c.andi a0, {USB_DMASK};",
         "c.beqz a0, se0_complete",
         "c.xor a0, a1;",
         "c.xor a1, a0;", // Recover a1, for next cycle.
 
         // If A0 is a 0 then that's bad, we just did a bit stuff
-                //   and A0 == 0 means there was no signal transition
+        //   and A0 == 0 means there was no signal transition
         "c.beqz a0, done_usb_message",
 
-                // Reset bit stuff, delay, then continue onto the next actual bit
+        // Reset bit stuff, delay, then continue onto the next actual bit
         "c.li s0, 6;",
 
-                "c.nop;",
+        "c.nop;",
         "nx6p3delay 2, a0 ",
 
         "c.bnez s1, bit_process", // + 4 cycles
