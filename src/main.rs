@@ -35,7 +35,8 @@ fn main() -> ! {
     // This is GPIOD, but i haven't figured out how to do this nicely yet
     let mut usb: UsbIf<0x4001_1000usize, 3, 2> = UsbIf {};
 
-    // Do this here to force the rust compile to build them
+    // Do this here to force the rust compiler to emit the functions, so they can be linked
+    // TODO find a different way to do this
     unsafe {
         usb.make_funcs();
     }

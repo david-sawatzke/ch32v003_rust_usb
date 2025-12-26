@@ -34,7 +34,8 @@ extern "C" {
 }
 const ENDPOINT0_SIZE: u32 = 8;
 
-// Assumes RV003USB_OPTIMIZE_FLASH
+// Needs a fixed size, index is determined by shift in assembly
+// TODO figure out a way to do that programmatically
 #[repr(C)]
 pub struct usb_endpoint {
     count: u32,
@@ -46,7 +47,7 @@ pub struct usb_endpoint {
     reserved2: u32,
     opaque: *const u8,
 }
-#[repr(C)]
+
 pub struct rv003usb_internal {
     current_endpoint: u32,
     my_address: u32,
@@ -57,6 +58,7 @@ pub struct rv003usb_internal {
     pub se0_windup: u32,
     eps: [usb_endpoint; 3], // ENDPOINTS TODO make this configurable
 }
+
 #[repr(C, packed)]
 pub struct usb_urb {
     w_request_type_lsb_request_msb: u16,
@@ -107,7 +109,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "andi a2, a2, 0b11111",
             "li a5, 0xffffff07",
             "and a0, a0, a5", // Mask off non-HSI
-            // Decimate windup - use as HSIrim.
+            // Decimate windup - use as HSI-Trim.
             "neg a1, a1
             srai a2, a1, 9",
             "addi a2, a2, 16  // add HSI offset.",
@@ -130,7 +132,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
     #[allow(no_mangle_generic_items)]
     #[no_mangle]
-    #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_send_empty(token: u32) {
         core::arch::naked_asm!(
@@ -875,6 +876,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             handle_se0_keepalive = sym Self::handle_se0_keepalive,
         );
     }
+
     pub extern "C" fn usb_pid_handle_in(
         addr: u32,
         data: *mut u8,
