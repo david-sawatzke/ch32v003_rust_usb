@@ -9,11 +9,11 @@ use utf16_lit::utf16;
             (usage_page = BUTTON, usage_min = BUTTON_1, usage_max = BUTTON_3) = {
                 #[packed_bits 3] #[item_settings data,variable,absolute] buttons=input;
             };
-            (usage_page = GENERIC_DESKTOP, usage = X, usage = Y, usage = WHEEL) = {
-                #[packed_bits 8] #[item_settings data,variable,relative] x=input;
-                #[packed_bits 8] #[item_settings data,variable,relative] y=input;
-                #[packed_bits 8] #[item_settings data,variable,relative] wheel=input;
-            };
+            (usage_page = GENERIC_DESKTOP,) = {
+                (usage = X,) = {#[item_settings data,variable,relative] x=input};
+                (usage = Y,) = {#[item_settings data,variable,relative] y=input};
+                (usage = WHEEL,) = {#[item_settings data,variable,relative] wheel=input};
+            }
         }
     }
 )]
@@ -26,7 +26,7 @@ struct MouseReport {
 // We need this value for the CONFIG_DESCRIPTOR, unfortunately there is no way
 // to get the hid descriptor statically. Thus hardcode it here and verify that it matches later on.
 // How do you get the real length without guessing? I just made a separate project that printed it
-const MOUSE_DESC_LEN: usize = 48;
+const MOUSE_DESC_LEN: usize = 57;
 
 /// KeyboardReport describes a report and its companion descriptor that can be
 /// used to send keyboard button presses to a host and receive the status of the
