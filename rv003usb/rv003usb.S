@@ -19,15 +19,26 @@
 #define SYSTICK_CNT 0xE000F008
 
 // This is 6 * n + 3 cycles
-#define nx6p3delay( n, freereg ) li freereg, ((n)+1); 1: c.addi freereg, -1; c.bnez freereg, 1b
-
+.macro nx6p3delay n, freereg
+    li \freereg, ((\n) + 1)
+    1: c.addi \freereg, -1
+    c.bnez \freereg, 1b
+.endm
 //See RV003USB_DEBUG_TIMING note in .c file.
-#define DEBUG_TICK_SETUP la x4, (TIM1_BASE + 0x58) 	// for debug (Go nowhere)
-#define DEBUG_TICK_MARK .balign 4; sw x0, 0(x4)
-#define	RESTORE_DEBUG_MARKER(x) lw	x4, x(sp)
-#define SAVE_DEBUG_MARKER(x)	sw	x4, x(sp)
+.macro DEBUG_TICK_SETUP
+    la x4, (TIM1_BASE + 0x58) 	// for debug (Go nowhere)
+.endm
+.macro DEBUG_TICK_MARK
+    .balign 4
+    sw x0, 0(x4)
+.endm
+.macro RESTORE_DEBUG_MARKER x
+    lw	x4, \x(sp)
+.endm
+.macro SAVE_DEBUG_MARKER x
+	sw	x4, \x(sp)
+.endm
 
-.global test_memory
 .global rv003usb_internal_data
 .global rv003usb_handle_packet
 .global main
@@ -59,7 +70,7 @@ EXTI7_0_IRQHandler:
 	sw	a4, 16(sp)
 	sw	s1, 28(sp)
 
-	SAVE_DEBUG_MARKER( 48 );
+	SAVE_DEBUG_MARKER 48 ;
 	DEBUG_TICK_SETUP
 	c.lw a1, INDR_OFFSET(a5)
 	c.andi a1, USB_DMASK;
@@ -216,9 +227,10 @@ packet_type_loop:
 data_crc:
 
 
-#define HANDLE_EOB_YES \
+.macro HANDLE_EOB_YES
 	sb a2, 0(t2); /* Save the byte off. TODO: Is unaligned byte access to RAM slow? */ \
 	.word 0x00138393; /*addi t2, t2, 1;*/
+.endm
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////	
@@ -235,11 +247,12 @@ bit_process:
 	c.xor a0, a1;
 
 //XXX GOOD
-#define HANDLE_NEXT_BYTE(is_end_of_byte, jumptype)  \
-	c.addi s1, -1; \
-	andi a0, s1, 7; /* s1 could be really really big */ \
-	c.jumptype a0, is_end_of_byte /* 4 cycles for this section. (Checked) (Sometimes 5)? */ 
-
+.macro HANDLE_NEXT_BYTE is_end_of_byte, jumptype
+	c.addi s1, -1;
+	andi a0, s1, 7; /* s1 could be really really big */
+	c.\jumptype a0, \is_end_of_byte /* 4 cycles for this section. (Checked) (Sometimes 5)? */ 
+.endm
+    
 	c.beqz a0, handle_one_bit
 handle_zero_bit:
 	c.xor a1, a0; // Recover a1, for next cycle
@@ -262,7 +275,7 @@ handle_zero_bit:
 	c.xor  a3, a0
 
 	c.srli a2, 1;  // shift a2 down by 1
-	HANDLE_NEXT_BYTE(is_end_of_byte, beqz)
+	HANDLE_NEXT_BYTE is_end_of_byte, beqz
 	c.nop
 	c.nop
 	c.nop
@@ -284,7 +297,7 @@ handle_one_bit:
 	ori a2, a2, 0x80
 	c.beqz s0, handle_bit_stuff;
 
-	HANDLE_NEXT_BYTE(is_end_of_byte, beqz)
+	HANDLE_NEXT_BYTE is_end_of_byte, beqz
 	c.nop // Need extra delay here because we need more time if it's end-of-byte.
 	c.nop
 	c.nop
@@ -295,7 +308,7 @@ handle_bit_stuff:
 	// We want to wait a little bit, then read another byte, and make
 	// sure everything is well, before heading back into the main loop
 	// Debug blip
-	HANDLE_NEXT_BYTE(not_is_end_of_byte_and_bit_stuffed, bnez)
+	HANDLE_NEXT_BYTE not_is_end_of_byte_and_bit_stuffed, bnez
 	HANDLE_EOB_YES
 
 not_is_end_of_byte_and_bit_stuffed:
@@ -314,7 +327,7 @@ not_is_end_of_byte_and_bit_stuffed:
 	c.li s0, 6;
 
         c.nop;
-	nx6p3delay( 2, a0 )
+	nx6p3delay 2, a0 
 
 	c.bnez s1, bit_process // + 4 cycles
 
@@ -346,7 +359,7 @@ se0_complete:
 	// For ACK don't worry about CRC.
 	addi a5, a0, -0b01001011
 
-	RESTORE_DEBUG_MARKER(48) // restore x4 for whatever in C land.
+	RESTORE_DEBUG_MARKER 48  // restore x4 for whatever in C land.
 
 	la a4, rv003usb_internal_data
 
@@ -406,7 +419,7 @@ done_usb_message_in:
 
 ret_from_se0:
 	lw	s1, 28(sp)
-	RESTORE_DEBUG_MARKER(48)
+	RESTORE_DEBUG_MARKER 48 
 	lw	a2, 8(sp)
 	lw	a3, 12(sp)
 	lw	a4, 16(sp)
@@ -426,3 +439,11 @@ interrupt_complete:
 	lw	a5, 20(sp)
 	addi	sp,sp,80
 	mret
+
+.purgem nx6p3delay
+.purgem HANDLE_EOB_YES
+.purgem HANDLE_NEXT_BYTE
+.purgem DEBUG_TICK_SETUP
+.purgem DEBUG_TICK_MARK
+.purgem RESTORE_DEBUG_MARKER
+.purgem SAVE_DEBUG_MARKER
