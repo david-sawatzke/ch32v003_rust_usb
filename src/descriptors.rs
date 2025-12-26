@@ -198,11 +198,19 @@ pub extern "C" fn get_descriptor_info(w_value: u32) -> (*const u8, u16) {
             )
         },
         0x04090302 => unsafe {
-            // TODO compare and assert length
-            core::slice::from_raw_parts(
-                &STR_PROD as *const _ as *const u8,
-                STR_PROD.b_length as usize,
-            )
+            if MouseReport::desc().len() != MOUSE_DESC_LEN as usize
+                || KeyboardReport::desc().len() != KBD_DESC_LEN as usize
+            {
+                core::slice::from_raw_parts(
+                    &STR_ERR as *const _ as *const u8,
+                    STR_ERR.b_length as usize,
+                )
+            } else {
+                core::slice::from_raw_parts(
+                    &STR_PROD as *const _ as *const u8,
+                    STR_PROD.b_length as usize,
+                )
+            }
         },
         0x04090303 => unsafe {
             core::slice::from_raw_parts(
