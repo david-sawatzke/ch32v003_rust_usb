@@ -27,7 +27,7 @@ use core::mem;
 use hal::pac::{EXTI, TIM1};
 
 #[used]
-pub static mut rv003usb_internal_data: rv003usb_internal = unsafe { mem::zeroed() };
+pub static mut RV003USB_INTERNAL_DATA: rv003usb_internal = unsafe { mem::zeroed() };
 extern "C" {
     pub fn usb_send_empty(token: u32);
     pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
@@ -122,7 +122,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
             RCC_CTRL = const 0x40021000, // RCC.CTRL
             SYSTICK_CNT = const 0xE000F008 as u32,
-            rv003usb_internal_data = sym rv003usb_internal_data,
+            rv003usb_internal_data = sym RV003USB_INTERNAL_DATA,
 
         );
         // TODO get periph register addresses from/to proper addr
@@ -871,7 +871,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             usb_pid_handle_out = sym Self::usb_pid_handle_out,
             usb_pid_handle_ack = sym Self::usb_pid_handle_ack,
             usb_pid_handle_setup = sym Self::usb_pid_handle_setup,
-            rv003usb_internal_data = sym rv003usb_internal_data,
+            rv003usb_internal_data = sym RV003USB_INTERNAL_DATA,
             handle_se0_keepalive = sym Self::handle_se0_keepalive,
         );
     }

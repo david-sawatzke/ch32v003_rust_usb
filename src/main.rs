@@ -11,9 +11,7 @@ use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 
 mod usb;
-use usb::{
-    rv003usb_internal, rv003usb_internal_data, usb_endpoint, usb_send_data, usb_send_empty, UsbIf,
-};
+use usb::{rv003usb_internal, usb_endpoint, usb_send_data, usb_send_empty, UsbIf};
 mod descriptors;
 
 #[qingke_rt::entry]
@@ -36,9 +34,7 @@ fn main() -> ! {
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
     let mut usb: UsbIf<0x4001_1000usize, 3, 2> = UsbIf {};
-    unsafe {
-        rv003usb_internal_data.se0_windup = 0;
-    }
+
     // Do this here to force the rust compile to build them
     unsafe {
         usb.make_funcs();
