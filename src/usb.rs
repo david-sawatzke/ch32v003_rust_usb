@@ -892,12 +892,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         } else {
             0b11000011
         };
-        // if RV003USB_HANDLE_IN_REQUEST
         if (e.custom != 0) || (endp != 0) {
             usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
             return;
         }
-        // endif
         let tsend = e.opaque;
         let offset = e.count << 3;
         let tosend = if (e.max_len - offset) > ENDPOINT0_SIZE {
@@ -1004,14 +1002,14 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         core::arch::naked_asm!(
         "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
         "c.li a1, 1",
-            "c.sw a1, {SETUP_REQUEST_OFFSET}(a4)", //ist->setup_request = 1;
+        "c.sw a1, {SETUP_REQUEST_OFFSET}(a4)", //ist->setup_request = 1;
         "c.slli a2, 3+2",
         "c.add a2, a4",
-            "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2)", //e->toggle_in = 1;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2)", //e->toggle_in = 1;
         "c.li a1, 0",
-            "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2) ", //e->count = 0;
-            "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2) ", //e->opaque = 0;
-            "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2) ", //e->count = 0;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2) ", //e->opaque = 0;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
         "ret",
         CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
         ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
