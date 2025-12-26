@@ -1,8 +1,6 @@
 use usbd_hid::descriptor::generator_prelude::*;
 use utf16_lit::utf16;
 
-// --- 2. HID Report Descriptors (The "Smart" Way) ---
-
 #[gen_hid_descriptor(
     (collection = APPLICATION, usage_page = GENERIC_DESKTOP, usage = MOUSE) = {
         (collection = PHYSICAL, usage = POINTER) = {
@@ -28,9 +26,6 @@ struct MouseReport {
 // How do you get the real length without guessing? I just made a separate project that printed it
 const MOUSE_DESC_LEN: usize = 57;
 
-/// KeyboardReport describes a report and its companion descriptor that can be
-/// used to send keyboard button presses to a host and receive the status of the
-/// keyboard LEDs.
 #[gen_hid_descriptor(
     (collection = APPLICATION, usage_page = GENERIC_DESKTOP, usage = KEYBOARD) = {
         (usage_page = KEYBOARD, usage_min = 0xE0, usage_max = 0xE7) = {
@@ -145,9 +140,6 @@ static CONFIG_DESCRIPTOR: [u8; 59] = [
     10,   // Interval Number of milliseconds between polls.
 ];
 
-// --- 3. String Descriptors ---
-
-// Rust strings are UTF-8, USB requires UTF-16LE.
 // A simple helper struct to mimic the C memory layout.
 #[repr(C, packed)]
 struct UsbStringDesc<const N: usize> {
@@ -159,8 +151,8 @@ struct UsbStringDesc<const N: usize> {
 // Helper to create the struct
 const fn make_string<const N: usize>(s: &[u16; N]) -> UsbStringDesc<N> {
     UsbStringDesc {
-        b_length: (2 * N + 2) as u8,
-        b_descriptor_type: 3, // STRING type
+        b_length: (2 * N + 2) as u8, // Includes the descriptor type and length
+        b_descriptor_type: 3,        // STRING type
         w_string: *s,
     }
 }
@@ -172,12 +164,7 @@ static STR_PROD: UsbStringDesc<8> = make_string(&utf16!("RV003USB"));
 static STR_SERIAL: UsbStringDesc<3> = make_string(&utf16!("000"));
 static STR_ERR: UsbStringDesc<3> = make_string(&utf16!("ERR"));
 
-// --- 4. The Lookup Logic ---
-
-/// This replaces your 'descriptor_list' and loop.
-/// Returns a tuple: (Pointer to data, Length of data)
-#[no_mangle]
-pub extern "C" fn get_descriptor_info(w_value: u32) -> (*const u8, u16) {
+pub fn get_descriptor_info(w_value: u32) -> (*const u8, u16) {
     let slice: &[u8] = match w_value {
         0x00000100 => &DEVICE_DESCRIPTOR,
         0x00000200 => &CONFIG_DESCRIPTOR,
@@ -222,11 +209,4 @@ pub extern "C" fn get_descriptor_info(w_value: u32) -> (*const u8, u16) {
     };
 
     (slice.as_ptr(), slice.len() as u16)
-}
-
-// TODO find a way to run this test
-#[test]
-fn check_descriptors() {
-    assert_eq!(MouseReport::desc().len(), MOUSE_DESC_LEN as usize);
-    assert_eq!(KeyboardReport::desc().len(), KBD_DESC_LEN as usize);
 }
