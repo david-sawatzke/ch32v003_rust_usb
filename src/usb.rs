@@ -93,14 +93,14 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             // Make sure we aren't in left field.
             "li a5, 4000",
-            "bge a2, a5, ret_from_se0",
+            "bge a2, a5, 1f",
             "li a5, -4000",
-            "blt a2, a5, ret_from_se0",
+            "blt a2, a5, 1f",
             "c.lw a1, {SE0_WINDUP_OFFSET}(a4)", // load windup se0_windup
             "c.add a1, a2",
             "c.sw a1, {SE0_WINDUP_OFFSET}(a4)", // save windup
             // No further adjustments
-            "beqz a1, ret_from_se0",
+            "beqz a1, 1f",
             "la a4, {RCC_CTRL}",
             "lw a0, 0(a4)",
             "srli a2, a0, 3", // Extract HSI Trim.
@@ -115,7 +115,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "slli a2, a2, 3",
             "or a0, a0, a2",
             "sw a0, 0(a4)",
-            "j ret_from_se0",
+            "1:",
+            "ret",
             SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
             LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
             DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
@@ -458,9 +459,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "sw	x4, \\x(sp)",
         ".endm",
 
-        // Temp globals as we move to rust
-        ".global ret_from_se0",
-
         /* Register map
         zero, ra, sp, gp, tp, t0, t1, t2
         Compressed:
@@ -489,6 +487,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.lw a1, {INDR_OFFSET}(a5)",
             "c.andi a1, {USB_DMASK};",
 
+        "la ra, ret_from_se0", // Common return address for all function calls.
         // Finish jump to se0
         "c.beqz a0, {handle_se0_keepalive}",
 
