@@ -458,7 +458,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         ".endm",
 
         // Temp globals as we move to rust
-        ".global done_usb_message_in",
         ".global ret_from_se0",
 
         /* Register map
@@ -986,7 +985,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.lw a0, ({EP_COUNT_OFFSET})(a2)", // count_in
             "c.addi a0, 1",
             "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
-            "c.j done_usb_message_in",
+            "ret",
                 CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
                 ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
                 EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
@@ -1013,7 +1012,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2) ", //e->count = 0;
             "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2) ", //e->opaque = 0;
             "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
-        "c.j done_usb_message_in",
+        "ret",
         CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
         ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
         SETUP_REQUEST_OFFSET = const mem::offset_of!(rv003usb_internal, setup_request),
@@ -1034,7 +1033,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
     ) {
         core::arch::naked_asm!(
             "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
-            "c.j done_usb_message_in",
+            "ret",
             CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
         );
     }
