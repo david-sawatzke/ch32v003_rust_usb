@@ -14,6 +14,7 @@ mod usb;
 use usb::{
     rv003usb_internal, rv003usb_internal_data, usb_endpoint, usb_send_data, usb_send_empty, UsbIf,
 };
+mod descriptors;
 
 #[qingke_rt::entry]
 fn main() -> ! {

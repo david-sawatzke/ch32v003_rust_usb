@@ -14,6 +14,8 @@ qingke = "*"
 qingke-rt = { version = "*", features = ["highcode"] }
 panic-halt = "1.0"
 embedded-hal = "1.0.0"
+usbd-hid = "0.9.0"
+utf16_lit = "2.0.2"
 
 [profile.release]
 strip = false   # symbols are not flashed to the microcontroller, so don't strip them.

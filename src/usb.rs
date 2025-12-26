@@ -1,5 +1,7 @@
+use crate::descriptors;
 use crate::usb_handle_user_in_request;
 use core::mem;
+
 #[no_mangle]
 #[used]
 pub static mut rv003usb_internal_data: rv003usb_internal = unsafe { mem::zeroed() };
@@ -37,9 +39,8 @@ pub struct usb_urb {
     lValueLSBIndexMSB: u32,
     wLength: u16,
 }
-/*
-Needs to be able to get more from the config of descriptors
- #[no_mangle]
+
+#[no_mangle]
 pub extern "C" fn usb_pid_handle_data(
     this_token: u32,
     data: *mut u8,
@@ -68,7 +69,7 @@ pub extern "C" fn usb_pid_handle_data(
         let wLength = s.wLength;
         //Send just a data packet.
         e.count = 0;
-        e.opaque = 0;
+        e.opaque = core::ptr::null_mut();
         e.custom = 0;
         e.max_len = 0;
         unsafe { (*ist).setup_request = 0 };
@@ -79,14 +80,20 @@ pub extern "C" fn usb_pid_handle_data(
         let reqShl = s.wRequestTypeLSBRequestMSB >> 1;
         if reqShl == (0x0921 >> 1) {
             // Class request (Will be writing)  This is hid_send_feature_report
-        } else if (reqShl == (0x0680 >> 1)) {
-            // TODO
-            for i in 0..DESCRIPTOR_LIST_ENTRIES {
-                descriptor_list
-            }
+        } else if reqShl == (0x0680 >> 1) {
+            let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
+            e.opaque = descriptor_addr as *mut u8;
+            let sw_len = wLength as u32;
+            let el_len = descriptor_len as u32;
+            e.max_len = if sw_len < el_len { sw_len } else { el_len };
+        } else if reqShl == (0x0500 >> 1) {
+            // SET_ADDRESS = 0x05
+            unsafe { (*ist).my_address = wvi };
         }
     }
-}*/
+    // Got the right data. Acknowledge.
+    unsafe { usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
+}
 #[no_mangle]
 pub extern "C" fn usb_pid_handle_in(
     addr: u32,
@@ -263,6 +270,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
             DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
         );
-        // get periph register addresses from/to proper addr
+        // TODO get periph register addresses from/to proper addr
     }
 }
