@@ -22,12 +22,10 @@
 // SOFTWARE.
 use crate::descriptors;
 use crate::usb_handle_user_in_request;
-use ch32_hal as hal;
 use core::mem;
-use hal::pac::{EXTI, TIM1};
 
-#[used]
 pub static mut RV003USB_INTERNAL_DATA: rv003usb_internal = unsafe { mem::zeroed() };
+
 extern "C" {
     pub fn usb_send_empty(token: u32);
     pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
@@ -43,8 +41,8 @@ pub struct usb_endpoint {
     toggle_out: u32,
     custom: u32,
     max_len: u32,
-    reserved1: u32,
-    reserved2: u32,
+    _reserved1: u32,
+    _reserved2: u32,
     opaque: *const u8,
 }
 
@@ -52,7 +50,7 @@ pub struct rv003usb_internal {
     current_endpoint: u32,
     my_address: u32,
     setup_request: u32,
-    reserved: u32,
+    _reserved: u32,
     last_se0_cyccount: u32,
     delta_se0_cyccount: i32,
     pub se0_windup: u32,
@@ -878,7 +876,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
     }
 
     pub extern "C" fn usb_pid_handle_in(
-        addr: u32,
+        _addr: u32,
         data: *mut u8,
         endp: u32,
         _unused: u32,
@@ -911,16 +909,15 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         }
     }
     pub extern "C" fn usb_pid_handle_data(
-        this_token: u32,
+        _this_token: u32,
         data: *mut u8,
         which_data: u32,
-        length: u32,
+        _length: u32,
         ist: &mut rv003usb_internal,
     ) {
         let epno = ist.current_endpoint;
 
         let e = &mut ist.eps[epno as usize];
-        let length = length - 3;
 
         // Already received this packet.
         if e.toggle_out != which_data {

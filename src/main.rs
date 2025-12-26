@@ -2,11 +2,9 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-use qingke::riscv::interrupt::machine;
 
 use hal::delay::Delay;
 use hal::gpio::{Input, Level, Output, Pin, Pull, Speed};
-use hal::interrupt::Interrupt;
 use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 
@@ -24,7 +22,7 @@ fn main() -> ! {
     let mut delay = Delay;
 
     let mut led1 = Output::new(p.PA1, Level::Low, Default::default());
-    let mut led2 = Output::new(p.PC0, Level::Low, Default::default());
+    let _led2 = Output::new(p.PC0, Level::Low, Default::default());
 
     // USB setup
     let mut _usb_dp = Input::new(p.PC3, Pull::None);
@@ -37,9 +35,7 @@ fn main() -> ! {
 
     // Do this here to force the rust compiler to emit the functions, so they can be linked
     // TODO find a different way to do this
-    unsafe {
-        usb.make_funcs();
-    }
+    usb.make_funcs();
 
     let exti = &pac::EXTI;
     let afio = &pac::AFIO;
