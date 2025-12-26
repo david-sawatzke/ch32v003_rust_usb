@@ -44,7 +44,7 @@ pub struct usb_endpoint {
     max_len: u32,
     reserved1: u32,
     reserved2: u32,
-    opaque: *mut u8,
+    opaque: *const u8,
 }
 #[repr(C)]
 pub struct rv003usb_internal {
@@ -80,7 +80,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         core::arch::naked_asm!(
             // In here, we want to do smart stuff with the
             // 1ms tick.
-            "la  a0, 0xE000F008", // SYSTICK_CNT
+            "la  a0, {SYSTICK_CNT}",
             "la a4, {rv003usb_internal_data}",
             "c.lw a1, {LAST_SE0_OFFSET}(a4)", //last cycle count   last_se0_cyccount
             "c.lw a2, 0(a0)", //this cycle count
@@ -101,8 +101,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.sw a1, {SE0_WINDUP_OFFSET}(a4)", // save windup
             // No further adjustments
             "beqz a1, ret_from_se0",
-            // 0x40021000 = RCC.CTLR
-            "la a4, 0x40021000",
+            "la a4, {RCC_CTRL}",
             "lw a0, 0(a4)",
             "srli a2, a0, 3", // Extract HSI Trim.
             "andi a2, a2, 0b11111",
@@ -120,6 +119,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
             LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
             DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
+            RCC_CTRL = const 0x40021000, // RCC.CTRL
+            SYSTICK_CNT = const 0xE000F008 as u32,
             rv003usb_internal_data = sym rv003usb_internal_data,
 
         );
@@ -153,7 +154,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         token: u32,
     ) {
         core::arch::naked_asm!(
-            ".macro nx6p3delay_usb_send n, freereg",
+            ".macro nx6p3delay n, freereg",
             "li \\freereg, ((\\n) + 1)",
             "1: c.addi \\freereg, -1",
             "c.bnez \\freereg, 1b",
@@ -248,7 +249,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             //Bit stuffing doesn't happen.
             "c.addi a1, -1",
             "c.beqz a1, pre_and_tok_done_sending_data",
-            "nx6p3delay_usb_send 2, a3 ;	c.nop;            ", // Free time!
+            "nx6p3delay 2, a3 ;	c.nop;            ", // Free time!
             "c.j pre_and_tok_send_inner_loop",
             ".balign 4",
             "pre_and_tok_done_sending_data:",
@@ -379,13 +380,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             //	c.bnez a2, poly_function  TODO: Uncomment me!
 
-            "nx6p3delay_usb_send 2, a3 ;",
+            "nx6p3delay 2, a3 ;",
 
             // Need to perform an SE0.
             "li s1, (1<<({USB_PIN_DM}+16)) | (1<<({USB_PIN_DP}+16))",
             "c.sw s1, {BSHR_OFFSET}(a5)",
 
-            "nx6p3delay_usb_send 7, a3 ;",
+            "nx6p3delay 7, a3 ;",
 
             "li s1, (1<<({USB_PIN_DM})) | (1<<({USB_PIN_DP}+16))",
             "c.sw s1, {BSHR_OFFSET}(a5)",
@@ -408,7 +409,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             // TODO: This seems to be either 222 or 226 (not 224) in cases.
             // It's off by 2 clock cycles.  Probably OK, but, hmm.
             "insert_stuffed_bit:",
-            "nx6p3delay_usb_send 3, a3",
+            "nx6p3delay 3, a3",
             "xor s1, s1, t1",
             "c.li a4, 6", // reset bit stuffing.
             "c.nop",
@@ -421,7 +422,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             // Restore original assembler state. "Needed" to ensure the macro
             // doesn't pollute other sections, but in practice (almost) never an
             // issue
-            ".purgem nx6p3delay_usb_send",
+            ".purgem nx6p3delay",
             USB_GPIO_BASE            = const USB_BASE,
             USB_PIN_DP            = const DP,
             USB_PIN_DM            = const DM,
@@ -491,13 +492,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // Finish jump to se0
         "c.beqz a0, {handle_se0_keepalive}",
 
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
-            "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
+        "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
         "c.j syncout",
         "syncout:",
         "sw	s0, 24(sp)",
@@ -743,8 +744,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "andi a0, s1, 7;", // Make sure we received an even number of bytes.
         "c.bnez a0, done_usb_message",
 
-
-
         // Special: handle ACKs?
         // Now we have to decide what we're doing based on the
         // packet type.
@@ -952,7 +951,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
                 // Class request (Will be writing)  This is hid_send_feature_report
             } else if req_shl == (0x0680 >> 1) {
                 let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
-                e.opaque = descriptor_addr as *mut u8;
+                e.opaque = descriptor_addr;
                 let sw_len = w_length as u32;
                 let el_len = descriptor_len as u32;
                 e.max_len = if sw_len < el_len { sw_len } else { el_len };
