@@ -97,17 +97,16 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     // I'm unsure if we can drop this entirely in the future
     // Probably not for the interrupt handler?
     pub(crate) fn enable(&mut self) {
-        unsafe { core::arch::asm!("// {}", sym Self::usb_interrupt_handler) }
         unsafe { RV003USB_INTERNAL_DATA = self as *mut _ as *mut u8 };
     }
 
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive(
+        &mut self,
         _dummy0: u32,
         _dummy1: u32,
         _dummy2: u32,
         _dummy3: u32,
-        ist: &mut Self,
     ) {
         // NOTE: this code can *almost* be converted to rust
         // With the single exception that t0-t2 aren't saved by our caller,
@@ -116,13 +115,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         core::arch::naked_asm!(
             // In here, we want to do smart stuff with the
             // 1ms tick.
-            "la a0, {SYSTICK_CNT}",
-            // self is in a4
-            "c.lw a1, {LAST_SE0_OFFSET}(a4)", //last cycle count   last_se0_cyccount
-            "c.lw a2, 0(a0)", //this cycle count
-            "c.sw a2, {LAST_SE0_OFFSET}(a4)", //store it back to last_se0_cyccount
+            "la a4, {SYSTICK_CNT}",
+            // self is in a0
+            "c.lw a1, {LAST_SE0_OFFSET}(a0)", //last cycle count   last_se0_cyccount
+            "c.lw a2, 0(a4)", //this cycle count
+            "c.sw a2, {LAST_SE0_OFFSET}(a0)", //store it back to last_se0_cyccount
             "c.sub a2, a1",
-            "c.sw a2, {DELTA_SE0_OFFSET}(a4)", //record delta_se0_cyccount
+            "c.sw a2, {DELTA_SE0_OFFSET}(a0)", //record delta_se0_cyccount
             "li a1, 48000",
             "c.sub a2, a1",
             // This is our deviance from 48MHz.
@@ -132,9 +131,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "bge a2, a5, 1f",
             "li a5, -4000",
             "blt a2, a5, 1f",
-            "c.lw a1, {SE0_WINDUP_OFFSET}(a4)", // load windup se0_windup
+            "c.lw a1, {SE0_WINDUP_OFFSET}(a0)", // load windup se0_windup
             "c.add a1, a2",
-            "c.sw a1, {SE0_WINDUP_OFFSET}(a4)", // save windup
+            "c.sw a1, {SE0_WINDUP_OFFSET}(a0)", // save windup
             // No further adjustments
             "beqz a1, 1f",
             "la a4, {RCC_CTRL}",
@@ -452,7 +451,15 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     // NOTE this function should never be called
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_interrupt_handler() {
+    pub(crate) unsafe extern "C" fn usb_interrupt_handler(
+        &mut self,
+        _dummy0: u32,
+        _dummy1: u32,
+        _dummy2: u32,
+        _dummy3: u32,
+    ) {
+        // TODO this doesn't *need* to be an naked function
+        // a few cycles of latency can be tolerated
         core::arch::naked_asm!(
 
         // This is 6 * n + 3 cycles
@@ -462,7 +469,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.bnez \\freereg, 1b",
         ".endm",
 
-            // UNUSED, legacy
+        // UNUSED, legacy
         ".macro DEBUG_TICK_MARK",
             "c.nop",
             "c.nop",
@@ -474,34 +481,21 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         s0, s1,	a0, a1, a2, a3, a4, a5
         */
 
-        ".global EXTI7_0_IRQHandler",
-
         ".balign 4",
-        "EXTI7_0_IRQHandler:",
         "addi	sp,sp,-80",
-        "sw	a0, 0(sp)",
-        "sw	a5, 20(sp)",
         "la a5, {USB_GPIO_BASE}",
-        "c.lw a0, {INDR_OFFSET}(a5)", // MUST check SE0 immediately.
-        "c.andi a0, {USB_DMASK}",
+        "c.lw a4, {INDR_OFFSET}(a5)", // MUST check SE0 immediately.
+        "c.andi a4, {USB_DMASK}",
 
-        "sw	a1, 4(sp)",
-        "sw	a2, 8(sp)",
-        "sw	a3, 12(sp)",
-        "sw	a4, 16(sp)",
-        "sw	s1, 28(sp)",
         "sw	ra, 52(sp)",
-
-        "la a4, {rv003usb_internal_data}",
-        "lw a4, 0(a4)",
-        "sw a4, 56(sp)",
+        "sw a0, 56(sp)",
 
         "c.lw a1, {INDR_OFFSET}(a5)",
         "c.andi a1, {USB_DMASK}",
 
         "la ra, ret_from_se0", // Common return address for all function calls.
         // Finish jump to se0
-        "c.beqz a0, {handle_se0_keepalive}",
+        "c.beqz a4, {handle_se0_keepalive}",
 
         "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
         "c.lw a0, {INDR_OFFSET}(a5); c.andi a0, {USB_DMASK}; bne a0, a1, syncout",
@@ -827,20 +821,12 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         "done_usb_message_in:",
         "lw	s0, 24(sp)",
         "lw	s1, 28(sp)",
-        "lw	t0, 32(sp)",
-        "lw	t1, 36(sp)",
-        "lw	t2, 40(sp)",
-        "lw ra, 52(sp)",
 
 
         "ret_from_se0:",
-        "lw	s1, 28(sp)",
-        "lw	a2, 8(sp)",
-        "lw	a3, 12(sp)",
-        "lw	a4, 16(sp)",
-        "lw	a1, 4(sp)",
 
         "interrupt_complete:",
+        "lw ra, 52(sp)",
         // Acknowledge interrupt.
         // EXTI->INTFR = 1<<4
         "c.j 1f; 1:", // Extra little bit of delay to make sure we don't accidentally false fire.
@@ -850,10 +836,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         "sw a0, 0(a5)",
 
         // Restore stack.
-        "lw	a0, 0(sp)",
-        "lw	a5, 20(sp)",
         "addi	sp,sp,80",
-        "mret",
+        "ret",
 
         ".purgem nx6p3delay",
         ".purgem HANDLE_EOB_YES",
@@ -877,7 +861,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             usb_pid_handle_out = sym Self::usb_pid_handle_out,
             usb_pid_handle_ack = sym Self::usb_pid_handle_ack,
             usb_pid_handle_setup = sym Self::usb_pid_handle_setup,
-            rv003usb_internal_data = sym RV003USB_INTERNAL_DATA,
             handle_se0_keepalive = sym Self::handle_se0_keepalive,
         );
     }

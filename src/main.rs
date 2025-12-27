@@ -3,13 +3,13 @@
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
+use ch32_hal::interrupt;
 use hal::delay::Delay;
 use hal::gpio::{Input, Level, Output, Pin, Pull, Speed};
 use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
-
 mod usb;
-use usb::{UsbEndpoint, UsbIf};
+use usb::{UsbEndpoint, UsbIf, RV003USB_INTERNAL_DATA};
 mod descriptors;
 
 #[qingke_rt::entry]
@@ -135,6 +135,13 @@ fn usb_handle_user_in_request<
         // If it's a control transfer, empty it.
         UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_empty(sendtok);
     }
+}
+
+#[interrupt]
+fn EXTI7_0_IRQHandler() {
+    let data: &mut UsbIf<0x4001_1000, 3, 2, 3> =
+        unsafe { &mut *(RV003USB_INTERNAL_DATA as *mut UsbIf<0x4001_1000, 3, 2, 3>) };
+    unsafe { data.usb_interrupt_handler(0, 0, 0, 0) };
 }
 
 mod _vectors {
