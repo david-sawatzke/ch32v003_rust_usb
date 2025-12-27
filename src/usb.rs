@@ -185,11 +185,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             //00: Universal push-pull output mode
             "c.sw a4, {CFGLR_OFFSET}(a5)",
 
-            "li t1, (1<<{USB_PIN_DP}) | (1<<({USB_PIN_DM}+16)) | (1<<{USB_PIN_DM}) | (1<<({USB_PIN_DP}+16));",
+            "li t1, (1<<{USB_PIN_DP}) | (1<<({USB_PIN_DM}+16)) | (1<<{USB_PIN_DM}) | (1<<({USB_PIN_DP}+16))",
 
 
             // Save off our preamble and token.
-            "c.slli a3, 7    ", //Put token further up so it gets sent later.
+            "c.slli a3, 7", //Put token further up so it gets sent later.
             "ori s0, a3, 0x40",
 
             "li t0, 0x0000",
@@ -249,7 +249,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             //Bit stuffing doesn't happen.
             "c.addi a1, -1",
             "c.beqz a1, pre_and_tok_done_sending_data",
-            "nx6p3delay 2, a3 ;	c.nop;            ", // Free time!
+            "nx6p3delay 2, a3 ;	c.nop", // Free time!
             "c.j pre_and_tok_send_inner_loop",
             ".balign 4",
             "pre_and_tok_done_sending_data:",
@@ -259,7 +259,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             //Restore size.
             "mv a1, t2//lw  a1, 12(sp)",
-            "c.beqz a1, no_really_done_sending_data ", //No actual payload?  Bail!
+            "c.beqz a1, no_really_done_sending_data", //No actual payload?  Bail!
             "c.addi a1, -1",
             //	beqz t2, no_really_done_sending_data
 
@@ -336,7 +336,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             // XXX WARNING: this was by https://github.com/cnlohr/rv003usb/issues/7
             // TODO Check me!
             "slli a3,a2,31", // Put a3s LSB into a0s MSB
-            "c.srai a3,31   ", // Copy MSB into all other bits
+            "c.srai a3,31", // Copy MSB into all other bits
 
             // Flip s1 (our bshr setting) by xoring it.
             // 10.....01
@@ -369,7 +369,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "beqz t0, no_really_done_sending_data",
             "srli t0, t0, 8", // reset poly - we don't want it anymore.
             "li a1, 7", // Load 8 more bits out
-            "beqz t0, send_inner_loop ", //Second CRC byte
+            "beqz t0, send_inner_loop", //Second CRC byte
             // First CRC byte
             "not s0, a2", // get read to send out the CRC.
             "c.j send_inner_loop",
@@ -380,13 +380,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
             //	c.bnez a2, poly_function  TODO: Uncomment me!
 
-            "nx6p3delay 2, a3 ;",
+            "nx6p3delay 2, a3",
 
             // Need to perform an SE0.
             "li s1, (1<<({USB_PIN_DM}+16)) | (1<<({USB_PIN_DP}+16))",
             "c.sw s1, {BSHR_OFFSET}(a5)",
 
-            "nx6p3delay 7, a3 ;",
+            "nx6p3delay 7, a3",
 
             "li s1, (1<<({USB_PIN_DM})) | (1<<({USB_PIN_DP}+16))",
             "c.sw s1, {BSHR_OFFSET}(a5)",
@@ -473,7 +473,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "sw	a5, 20(sp)",
         "la a5, {USB_GPIO_BASE}",
         "c.lw a0, {INDR_OFFSET}(a5)", // MUST check SE0 immediately.
-            "c.andi a0, {USB_DMASK}",
+        "c.andi a0, {USB_DMASK}",
 
         "sw	a1, 4(sp)",
         "sw	a2, 8(sp)",
@@ -481,10 +481,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "sw	a4, 16(sp)",
         "sw	s1, 28(sp)",
 
-        "SAVE_DEBUG_MARKER 48 ;",
+        "SAVE_DEBUG_MARKER 48",
         "DEBUG_TICK_SETUP",
         "c.lw a1, {INDR_OFFSET}(a5)",
-            "c.andi a1, {USB_DMASK};",
+        "c.andi a1, {USB_DMASK}",
 
         "la ra, ret_from_se0", // Common return address for all function calls.
         // Finish jump to se0
@@ -501,7 +501,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "syncout:",
         "sw	s0, 24(sp)",
         "li a2, 0",
-        "sw	t0, 32(sp) ", // XXX NOTE: This is actually unused register - remove some day?
+        "sw	t0, 32(sp)", // XXX NOTE: This is actually unused register - remove some day?
         "sw	t1, 36(sp)",
 
         // We are coarsely sync'd here.
@@ -515,21 +515,21 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         ".balign 4",
         "preamble_loop:",
         "DEBUG_TICK_MARK",
-        "c.lw a0, {INDR_OFFSET}(a5);",
-            "c.andi a0, {USB_DMASK};",
+        "c.lw a0, {INDR_OFFSET}(a5)",
+        "c.andi a0, {USB_DMASK}",
         "c.beqz a0, done_usb_message", // SE0 here?
-        "c.xor a0, a1;",
-        "c.xor a1, a0;", // Recover a1.
+        "c.xor a0, a1",
+        "c.xor a1, a0", // Recover a1.
         "j 1f; 1:", // 4 cycles?
         "c.beqz a0, done_preamble",
         "j 1f; 1:", // 4 cycles?
-        "c.lw s0, {INDR_OFFSET}(a5);",
-            "c.andi s0, {USB_DMASK};",
+        "c.lw s0, {INDR_OFFSET}(a5)",
+        "c.andi s0, {USB_DMASK}",
         "c.xor s0, a1",
 
         // TRICKY: This helps retime the USB sync.
         // If s0 is nonzero, then it's changed (we're going too slow)
-        "c.bnez s0, 2f; ", // This code takes 6 cycles or 8 cycles, depending.
+        "c.bnez s0, 2f", // This code takes 6 cycles or 8 cycles, depending.
         "c.j 1f; 1:",
         "2:",
         "j preamble_loop", // 4 cycles
@@ -545,7 +545,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // This is the first bit that matters.
         "c.li s0, 6", // 1 runs.
 
-        "c.nop; ",
+        "c.nop",
 
         // 8 extra cycles here cause errors.
         // -5 cycles is too much.
@@ -580,11 +580,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.nop",
 
         "DEBUG_TICK_MARK",
-        "c.lw a0, {INDR_OFFSET}(a5);",
-        "c.andi a0, {USB_DMASK};",
+        "c.lw a0, {INDR_OFFSET}(a5)",
+        "c.andi a0, {USB_DMASK}",
         "c.beqz a0, done_usb_message", // Not se0 complete, that can't happen here and be valid.
-        "c.xor a0, a1;",
-        "c.xor a1, a0;", // Recover a1, for next cycle
+        "c.xor a0, a1",
+        "c.xor a1, a0", // Recover a1, for next cycle
         // a0 = 00 for 1 and 11 for 0
 
         // No CRC for the header.
@@ -633,8 +633,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
 
         ".macro HANDLE_EOB_YES",
-        "sb a2, 0(t2);", /* Save the byte off. TODO: Is unaligned byte access to RAM slow? */
-        ".word 0x00138393;", /*addi t2, t2, 1;*/
+        "sb a2, 0(t2)", /* Save the byte off. TODO: Is unaligned byte access to RAM slow? */
+        ".word 0x00138393", /*addi t2, t2, 1;*/
         ".endm",
 
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -647,39 +647,39 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         ".balign 4",
         "bit_process:",
         "DEBUG_TICK_MARK",
-        "c.lw a0, {INDR_OFFSET}(a5);",
-        "c.andi a0, {USB_DMASK};",
-        "c.xor a0, a1;",
+        "c.lw a0, {INDR_OFFSET}(a5)",
+        "c.andi a0, {USB_DMASK}",
+        "c.xor a0, a1",
 
         //XXX GOOD
         ".macro HANDLE_NEXT_BYTE is_end_of_byte, jumptype",
-        "c.addi s1, -1;",
+        "c.addi s1, -1",
         "andi a0, s1, 7; /* s1 could be really really big */",
-        "c.\\jumptype a0, \\is_end_of_byte /* 4 cycles for this section. (Checked) (Sometimes 5)? */ ",
+        "c.\\jumptype a0, \\is_end_of_byte", /* 4 cycles for this section. (Checked) (Sometimes 5)? */
         ".endm",
 
         "c.beqz a0, handle_one_bit",
         "handle_zero_bit:",
-        "c.xor a1, a0;", // Recover a1, for next cycle
+        "c.xor a1, a0", // Recover a1, for next cycle
 
         // TODO: Do we have time to do time fixup here?
         // Can we resync time here?
         // If they are different, we need to sloowwww dowwwnnn
         // There is some free time.  Could do something interesting here!!!
         // I was thinking we could put the resync code here.
-        "c.j 1f; 1: ", //Delay 4 cycles.
+        "c.j 1f; 1:", //Delay 4 cycles.
 
         "c.li s0, 6", // reset runs-of-one.
         "c.beqz a1, se0_complete",
 
         // Handle CRC (0 bit)  (From @Domkeykong)
         "slli a0,a3,31", // Put a3s LSB into a0s MSB
-        "c.srai a0,31   ", // Copy MSB into all other bits
+        "c.srai a0,31", // Copy MSB into all other bits
         "c.srli a3,1",
         "c.and  a0, a4",
         "c.xor  a3, a0",
 
-        "c.srli a2, 1; ", // shift a2 down by 1
+        "c.srli a2, 1", // shift a2 down by 1
         "HANDLE_NEXT_BYTE is_end_of_byte, beqz",
         "c.nop",
         "c.nop",
@@ -690,7 +690,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         ".balign 4",
         "handle_one_bit:",
-        "c.addi s0, -1;", // Count # of runs of 1 (subtract 1)
+        "c.addi s0, -1", // Count # of runs of 1 (subtract 1)
         //HANDLE_CRC (1 bit)
         "andi a0, a3, 1",
         "c.addi a0, -1",
@@ -698,9 +698,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.srli a3, 1",
         "c.xor a3, a0",
 
-        "c.srli a2, 1; ", // shift a2 down by 1
+        "c.srli a2, 1", // shift a2 down by 1
         "ori a2, a2, 0x80",
-        "c.beqz s0, handle_bit_stuff;",
+        "c.beqz s0, handle_bit_stuff",
 
         "HANDLE_NEXT_BYTE is_end_of_byte, beqz",
         "c.nop", // Need extra delay here because we need more time if it's end-of-byte.
@@ -718,28 +718,28 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         "not_is_end_of_byte_and_bit_stuffed:",
         "DEBUG_TICK_MARK",
-        "c.lw a0, {INDR_OFFSET}(a5);",
-        "c.andi a0, {USB_DMASK};",
+        "c.lw a0, {INDR_OFFSET}(a5)",
+        "c.andi a0, {USB_DMASK}",
         "c.beqz a0, se0_complete",
-        "c.xor a0, a1;",
-        "c.xor a1, a0;", // Recover a1, for next cycle.
+        "c.xor a0, a1",
+        "c.xor a1, a0", // Recover a1, for next cycle.
 
         // If A0 is a 0 then that's bad, we just did a bit stuff
         //   and A0 == 0 means there was no signal transition
         "c.beqz a0, done_usb_message",
 
         // Reset bit stuff, delay, then continue onto the next actual bit
-        "c.li s0, 6;",
+        "c.li s0, 6",
 
-        "c.nop;",
-        "nx6p3delay 2, a0 ",
+        "c.nop",
+        "nx6p3delay 2, a0",
 
         "c.bnez s1, bit_process", // + 4 cycles
 
         ".balign 4",
         "se0_complete:",
         // This is triggered when we finished getting a packet.
-        "andi a0, s1, 7;", // Make sure we received an even number of bytes.
+        "andi a0, s1, 7", // Make sure we received an even number of bytes.
         "c.bnez a0, done_usb_message",
 
         // Special: handle ACKs?
@@ -762,7 +762,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // For ACK don't worry about CRC.
         "addi a5, a0, -0b01001011",
 
-        "RESTORE_DEBUG_MARKER 48 ", // restore x4 for whatever in C land.
+        "RESTORE_DEBUG_MARKER 48", // restore x4 for whatever in C land.
 
         "la a4, {rv003usb_internal_data}",
 
@@ -778,7 +778,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "lhu a2, 0(a1)",
         "andi a0, a2, 0x7f", // addr
         "c.srli a2, 7",
-        "c.andi a2, 0xf   ", // endp
+        "c.andi a2, 0xf", // endp
         "li s0, {ENDPOINTS}",
         "bgeu a2, s0, done_usb_message", // Make sure < ENDPOINTS
         "c.beqz a0,  yes_check_tokens",
@@ -797,7 +797,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         // CRC is nonzero. (Good for Data packets)
         "crc_for_tokens_would_be_bad_maybe_data:",
-        "li s0, 0xb001 ", // UGH: You can't use the CRC16 in reverse :(
+        "li s0, 0xb001", // UGH: You can't use the CRC16 in reverse :(
         "c.sub a3, s0",
         "c.bnez a3, done_usb_message_in",
         // Good CRC!!
@@ -822,7 +822,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         "ret_from_se0:",
         "lw	s1, 28(sp)",
-        "RESTORE_DEBUG_MARKER 48 ",
+        "RESTORE_DEBUG_MARKER 48",
         "lw	a2, 8(sp)",
         "lw	a3, 12(sp)",
         "lw	a4, 16(sp)",
@@ -972,7 +972,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.lw a2, {CURRENT_ENDP_OFFSET}(a4)", //ist->current_endpoint -> endp;
             "c.slli a2, 5", // TODO what's happening here? ⇒ Fixed endpoint struct size
             "c.add a2, a4",
-            "c.addi a2, {ENDP_OFFSET}", // usb_endpoint eps[ENDPOINTS];
+            "c.addi a2, {ENDP_OFFSET}", // UsbEndpoint eps[ENDPOINTS];
             "c.lw a0, ({EP_TOGGLE_IN_OFFSET})(a2)", // toggle_in=!toggle_in
             "c.li a1, 1",
             "c.xor a0, a1",
@@ -1004,8 +1004,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.add a2, a4",
         "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2)", //e->toggle_in = 1;
         "c.li a1, 0",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2) ", //e->count = 0;
-        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2) ", //e->opaque = 0;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2)", //e->count = 0;
+        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2)", //e->opaque = 0;
         "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
         "ret",
         CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
