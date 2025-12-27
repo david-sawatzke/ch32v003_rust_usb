@@ -102,13 +102,22 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     }
 
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn handle_se0_keepalive() {
+    pub(crate) unsafe extern "C" fn handle_se0_keepalive(
+        _dummy0: u32,
+        _dummy1: u32,
+        _dummy2: u32,
+        _dummy3: u32,
+        ist: &mut Self,
+    ) {
+        // NOTE: this code can *almost* be converted to rust
+        // With the single exception that t0-t2 aren't saved by our caller,
+        // which is in a performance critical section, so doesn't *quite* follow
+        // the normal calling convention
         core::arch::naked_asm!(
             // In here, we want to do smart stuff with the
             // 1ms tick.
             "la a0, {SYSTICK_CNT}",
-            "la a4, {rv003usb_internal_data}",
-            "lw a4, 0(a4)",
+            // self is in a4
             "c.lw a1, {LAST_SE0_OFFSET}(a4)", //last cycle count   last_se0_cyccount
             "c.lw a2, 0(a0)", //this cycle count
             "c.sw a2, {LAST_SE0_OFFSET}(a4)", //store it back to last_se0_cyccount
@@ -149,7 +158,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             DELTA_SE0_OFFSET = const mem::offset_of!(Self, delta_se0_cyccount),
             RCC_CTRL = const 0x40021000, // RCC.CTRL
             SYSTICK_CNT = const 0xE000F008 as u32,
-            rv003usb_internal_data = sym RV003USB_INTERNAL_DATA,
 
         );
         // TODO get periph register addresses from/to proper addr
@@ -433,11 +441,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             // doesn't pollute other sections, but in practice (almost) never an
             // issue
             ".purgem nx6p3delay",
-            USB_GPIO_BASE            = const USB_BASE,
-            USB_PIN_DP            = const DP,
-            USB_PIN_DM            = const DM,
-            BSHR_OFFSET            = const 16, // Don't see a good way to get this from the pac?
-            CFGLR_OFFSET            = const 0,
+            USB_GPIO_BASE = const USB_BASE,
+            USB_PIN_DP = const DP,
+            USB_PIN_DM = const DM,
+            BSHR_OFFSET = const 16, // Don't see a good way to get this from the pac?
+            CFGLR_OFFSET = const 0,
         );
     }
 
@@ -482,6 +490,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         "sw	a3, 12(sp)",
         "sw	a4, 16(sp)",
         "sw	s1, 28(sp)",
+        "sw	ra, 52(sp)",
+
+        "la a4, {rv003usb_internal_data}",
+        "lw a4, 0(a4)",
+        "sw a4, 56(sp)",
 
         "c.lw a1, {INDR_OFFSET}(a5)",
         "c.andi a1, {USB_DMASK}",
@@ -536,7 +549,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         ".balign 4",
         "done_preamble:",
         "sw  t2, 40(sp)",
-        "sw  ra, 52(sp)",
+        "sw  t2, 40(sp)", // DUMMY required for timing reasons
         // 16-byte temporary buffer at 56+sp
 
         // XXX TODO: Do one byte here to determine the header byte and from that set the CRC.
@@ -763,8 +776,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         "addi a5, a0, -0b01001011",
 
 
-        "la a4, {rv003usb_internal_data}",
-        "lw a4, 0(a4)",
+        // Recover self pointer from previousy
+        "lw a4, 56(sp)",
 
         // ACK doesn't need good CRC.
         "c.beqz a5, {usb_pid_handle_ack}",
