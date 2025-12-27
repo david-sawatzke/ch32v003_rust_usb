@@ -9,7 +9,7 @@ use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 
 mod usb;
-use usb::{rv003usb_internal, usb_endpoint, usb_send_data, usb_send_empty, UsbIf};
+use usb::{usb_send_data, usb_send_empty, UsbEndpoint, UsbIf};
 mod descriptors;
 
 #[qingke_rt::entry]
@@ -31,11 +31,12 @@ fn main() -> ! {
     let mut _usb_dm = Input::new(p.PC2, Pull::None);
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
-    let mut usb: UsbIf<0x4001_1000usize, 3, 2> = UsbIf {};
+    // TODO needs to have a fixed address
+    let mut usb: UsbIf<0x4001_1000usize, 3, 2, 3> = UsbIf::default();
 
     // Do this here to force the rust compiler to emit the functions, so they can be linked
     // TODO find a different way to do this
-    usb.make_funcs();
+    usb.enable();
 
     let exti = &pac::EXTI;
     let afio = &pac::AFIO;
@@ -64,12 +65,17 @@ static mut TSAJOYSTICK_MOUSE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
 static mut I_KEYBOARD: i32 = 0;
 static mut TSAJOYSTICK_KEYBOARD: [u8; 8] = [0x00; 8];
 
-fn usb_handle_user_in_request(
-    _e: *mut usb_endpoint,
+fn usb_handle_user_in_request<
+    const USB_BASE: usize,
+    const DP: u8,
+    const DM: u8,
+    const EPS: usize,
+>(
+    _e: *mut UsbEndpoint,
     _scratchpad: *mut u8,
     endp: i32,
     sendtok: u32,
-    _ist: *const rv003usb_internal,
+    _ist: &mut UsbIf<USB_BASE, DP, DM, EPS>,
 ) {
     if endp == 1 {
         // Mouse (4 bytes)

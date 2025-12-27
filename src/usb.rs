@@ -24,7 +24,7 @@ use crate::descriptors;
 use crate::usb_handle_user_in_request;
 use core::mem;
 
-pub static mut RV003USB_INTERNAL_DATA: rv003usb_internal = unsafe { mem::zeroed() };
+pub static mut RV003USB_INTERNAL_DATA: *mut u8 = unsafe { mem::zeroed() };
 
 extern "C" {
     pub fn usb_send_empty(token: u32);
@@ -35,7 +35,7 @@ const ENDPOINT0_SIZE: u32 = 8;
 // Needs a fixed size, index is determined by shift in assembly
 // TODO figure out a way to do that programmatically
 #[repr(C)]
-pub struct usb_endpoint {
+pub struct UsbEndpoint {
     count: u32,
     toggle_in: u32,
     toggle_out: u32,
@@ -45,43 +45,78 @@ pub struct usb_endpoint {
     _reserved2: u32,
     opaque: *const u8,
 }
+impl UsbEndpoint {
+    const fn new() -> Self {
+        Self {
+            count: 0,
+            toggle_in: 0,
+            toggle_out: 0,
+            custom: 0,
+            max_len: 0,
+            _reserved1: 0,
+            _reserved2: 0,
+            opaque: core::ptr::null(),
+        }
+    }
+}
 
-pub struct rv003usb_internal {
+#[repr(C, packed)]
+struct UsbUrb {
+    w_request_type_lsb_request_msb: u16,
+    l_value_lsb_index_msb: u32,
+    w_length: u16,
+}
+
+#[repr(C)]
+pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> {
     current_endpoint: u32,
     my_address: u32,
     setup_request: u32,
     _reserved: u32,
     last_se0_cyccount: u32,
     delta_se0_cyccount: i32,
-    pub se0_windup: u32,
-    eps: [usb_endpoint; 3], // ENDPOINTS TODO make this configurable
+    se0_windup: u32,
+    eps: [UsbEndpoint; EPS], // ENDPOINTS
 }
 
-#[repr(C, packed)]
-pub struct usb_urb {
-    w_request_type_lsb_request_msb: u16,
-    l_value_lsb_index_msb: u32,
-    w_length: u16,
+impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> Default
+    for UsbIf<USB_BASE, DP, DM, EPS>
+{
+    fn default() -> Self {
+        Self {
+            current_endpoint: 0,
+            my_address: 0,
+            setup_request: 0,
+            _reserved: 0,
+            last_se0_cyccount: 0,
+            delta_se0_cyccount: 0,
+            se0_windup: 0,
+            eps: [const { UsbEndpoint::new() }; EPS],
+        }
+    }
 }
 
-pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8> {}
-impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> {
+impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
+    UsbIf<USB_BASE, DP, DM, EPS>
+{
     // Advanced "pfusch" to force rust to make the functions of the generic and keep it until linker phase
     // Hopefully can be dropped in the future
     // I'm unsure if we can drop this entirely in the future
     // Probably not for the interrupt handler?
-    pub(crate) fn make_funcs(&mut self) {
+    pub(crate) fn enable(&mut self) {
         unsafe { core::arch::asm!("// {}", sym Self::usb_send_empty) }
         unsafe { core::arch::asm!("// {}", sym Self::usb_send_data) }
         unsafe { core::arch::asm!("// {}", sym Self::usb_interrupt_handler) }
+        unsafe { RV003USB_INTERNAL_DATA = self as *mut _ as *mut u8 };
     }
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive() {
         core::arch::naked_asm!(
             // In here, we want to do smart stuff with the
             // 1ms tick.
-            "la  a0, {SYSTICK_CNT}",
+            "la a0, {SYSTICK_CNT}",
             "la a4, {rv003usb_internal_data}",
+            "lw a4, 0(a4)",
             "c.lw a1, {LAST_SE0_OFFSET}(a4)", //last cycle count   last_se0_cyccount
             "c.lw a2, 0(a0)", //this cycle count
             "c.sw a2, {LAST_SE0_OFFSET}(a4)", //store it back to last_se0_cyccount
@@ -117,9 +152,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "sw a0, 0(a4)",
             "1:",
             "ret",
-            SE0_WINDUP_OFFSET = const mem::offset_of!(rv003usb_internal, se0_windup),
-            LAST_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, last_se0_cyccount),
-            DELTA_SE0_OFFSET = const mem::offset_of!(rv003usb_internal, delta_se0_cyccount),
+            SE0_WINDUP_OFFSET = const mem::offset_of!(Self, se0_windup),
+            LAST_SE0_OFFSET = const mem::offset_of!(Self, last_se0_cyccount),
+            DELTA_SE0_OFFSET = const mem::offset_of!(Self, delta_se0_cyccount),
             RCC_CTRL = const 0x40021000, // RCC.CTRL
             SYSTICK_CNT = const 0xE000F008 as u32,
             rv003usb_internal_data = sym RV003USB_INTERNAL_DATA,
@@ -444,18 +479,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.bnez \\freereg, 1b",
         ".endm",
 
-        ".macro DEBUG_TICK_SETUP",
-            "la x4, ({TIM1_BASE} + 0x58) // for debug (Go nowhere)",
-        ".endm",
+            // UNUSED, legacy
         ".macro DEBUG_TICK_MARK",
-            ".balign 4",
-            "sw x0, 0(x4)",
-        ".endm",
-        ".macro RESTORE_DEBUG_MARKER x",
-            "lw x4, \\x(sp)",
-        ".endm",
-        ".macro SAVE_DEBUG_MARKER x",
-        "sw	x4, \\x(sp)",
+            "c.nop",
+            "c.nop",
         ".endm",
 
         /* Register map
@@ -481,8 +508,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "sw	a4, 16(sp)",
         "sw	s1, 28(sp)",
 
-        "SAVE_DEBUG_MARKER 48",
-        "DEBUG_TICK_SETUP",
         "c.lw a1, {INDR_OFFSET}(a5)",
         "c.andi a1, {USB_DMASK}",
 
@@ -762,9 +787,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         // For ACK don't worry about CRC.
         "addi a5, a0, -0b01001011",
 
-        "RESTORE_DEBUG_MARKER 48", // restore x4 for whatever in C land.
 
         "la a4, {rv003usb_internal_data}",
+        "lw a4, 0(a4)",
 
         // ACK doesn't need good CRC.
         "c.beqz a5, {usb_pid_handle_ack}",
@@ -822,7 +847,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
 
         "ret_from_se0:",
         "lw	s1, 28(sp)",
-        "RESTORE_DEBUG_MARKER 48",
         "lw	a2, 8(sp)",
         "lw	a3, 12(sp)",
         "lw	a4, 16(sp)",
@@ -846,25 +870,20 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         ".purgem nx6p3delay",
         ".purgem HANDLE_EOB_YES",
         ".purgem HANDLE_NEXT_BYTE",
-        ".purgem DEBUG_TICK_SETUP",
         ".purgem DEBUG_TICK_MARK",
-        ".purgem RESTORE_DEBUG_MARKER",
-        ".purgem SAVE_DEBUG_MARKER",
 
             USB_GPIO_BASE = const USB_BASE,
             USB_PIN_DM = const DM,
             // A little weird, but this way, the USB packet is always aligned.
             DATA_PTR_OFFSET = const 59+4,
-            MY_ADDRESS_OFFSET_BYTES = const mem::offset_of!(rv003usb_internal, my_address),
+            MY_ADDRESS_OFFSET_BYTES = const mem::offset_of!(Self, my_address),
             INDR_OFFSET = const 8,
             USB_DMASK = const ((1<<(DP)) | 1<<(DM)),
             USB_BUFFER_SIZE = const 12, // Packet Type + 8 + CRC + Buffer
-            ENDPOINTS = const 3, // TODO make configurable
+            ENDPOINTS = const EPS, // TODO make configurable
             // NOTE the following is *not* compile time defined
             // EXTI_BASE = const (EXTI.as_ptr()) as u32,
-            // TIM1_BASE = const (TIM1.as_ptr()) as u32,
             EXTI_BASE = const 0x40010400,
-            TIM1_BASE = const 0x40012C00,
             usb_pid_handle_data = sym Self::usb_pid_handle_data,
             usb_pid_handle_in = sym Self::usb_pid_handle_in,
             usb_pid_handle_out = sym Self::usb_pid_handle_out,
@@ -880,7 +899,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         _unused: u32,
-        ist: &mut rv003usb_internal,
+        ist: &mut Self,
     ) {
         ist.current_endpoint = endp;
 
@@ -913,7 +932,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         which_data: u32,
         _length: u32,
-        ist: &mut rv003usb_internal,
+        ist: &mut Self,
     ) {
         let epno = ist.current_endpoint;
 
@@ -929,7 +948,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         e.toggle_out = !e.toggle_out;
 
         if ist.setup_request != 0 {
-            let s = unsafe { &mut *(data as *mut usb_urb) };
+            let s = unsafe { &mut *(data as *mut UsbUrb) };
             let wvi = s.l_value_lsb_index_msb;
             let w_length = s.w_length;
             //Send just a data packet.
@@ -966,7 +985,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         dummy1: u32,
         dummy2: u32,
-        ist: &mut rv003usb_internal,
+        ist: &mut Self,
     ) {
         core::arch::naked_asm!(
             "c.lw a2, {CURRENT_ENDP_OFFSET}(a4)", //ist->current_endpoint -> endp;
@@ -981,10 +1000,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
             "c.addi a0, 1",
             "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
             "ret",
-                CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
-                ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
-                EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
-                EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
+                CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
+                ENDP_OFFSET = const mem::offset_of!(Self, eps),
+                EP_TOGGLE_IN_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_in),
+                EP_COUNT_OFFSET = const mem::offset_of!(UsbEndpoint, count),
         );
     }
 
@@ -994,7 +1013,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         unused: u32,
-        ist: &mut rv003usb_internal,
+        ist: &mut Self,
     ) {
         core::arch::naked_asm!(
         "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
@@ -1008,13 +1027,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2)", //e->opaque = 0;
         "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
         "ret",
-        CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
-        ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, eps),
-        SETUP_REQUEST_OFFSET = const mem::offset_of!(rv003usb_internal, setup_request),
-        EP_COUNT_OFFSET = const mem::offset_of!(usb_endpoint, count),
-        EP_TOGGLE_IN_OFFSET = const mem::offset_of!(usb_endpoint, toggle_in),
-        EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(usb_endpoint, toggle_out),
-        EP_OPAQUE_OFFSET = const mem::offset_of!(usb_endpoint, opaque),
+        CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
+        ENDP_OFFSET = const mem::offset_of!(Self, eps),
+        SETUP_REQUEST_OFFSET = const mem::offset_of!(Self, setup_request),
+        EP_COUNT_OFFSET = const mem::offset_of!(UsbEndpoint, count),
+        EP_TOGGLE_IN_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_in),
+        EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_out),
+        EP_OPAQUE_OFFSET = const mem::offset_of!(UsbEndpoint, opaque),
         );
     }
 
@@ -1024,12 +1043,12 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8> UsbIf<USB_BASE, DP, DM> 
         data: *mut u8,
         endp: u32,
         unused: u32,
-        ist: &mut rv003usb_internal,
+        ist: &mut Self,
     ) {
         core::arch::naked_asm!(
             "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
             "ret",
-            CURRENT_ENDP_OFFSET = const mem::offset_of!(rv003usb_internal, current_endpoint),
+            CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
         );
     }
 }
