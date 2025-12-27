@@ -158,16 +158,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         // TODO get periph register addresses from/to proper addr
     }
 
-    #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_send_empty(token: u32) {
-        core::arch::naked_asm!(
-        "c.mv a3, a0",
-        "la a0, always0",
-        "li a1, 2",
-        "c.mv a2, a1",
-        "c.j {usb_send_data}",
-        usb_send_data = sym Self::usb_send_data
-        );
+    pub(crate) unsafe fn usb_send_empty(token: u32) {
+        Self::usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token);
     }
 
     #[allow(named_asm_labels)]
@@ -440,9 +432,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.nop",
             "sw s1, {BSHR_OFFSET}(a5)",
             "c.j send_end_bit_complete",
-            ".balign 4",
-            "always0:",
-            ".word 0x00",
             // Restore original assembler state. "Needed" to ensure the macro
             // doesn't pollute other sections, but in practice (almost) never an
             // issue
