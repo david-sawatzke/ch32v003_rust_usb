@@ -158,8 +158,8 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         // TODO get periph register addresses from/to proper addr
     }
 
-    pub(crate) unsafe fn usb_send_empty(token: u32) {
-        Self::usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token);
+    pub(crate) fn usb_send_empty(token: u32) {
+        unsafe { Self::usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token) };
     }
 
     #[allow(named_asm_labels)]
@@ -900,7 +900,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         };
         let sendnow = tsend.wrapping_add(offset as usize);
         if tosend <= 0 {
-            unsafe { Self::usb_send_empty(sendtok) };
+            Self::usb_send_empty(sendtok);
         } else {
             unsafe { Self::usb_send_data(sendnow, tosend, 0, sendtok) };
         }
@@ -994,10 +994,12 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     ) {
         ist.current_endpoint = endp;
         ist.setup_request = 1;
-        ist.eps[endp as usize].toggle_in = 1;
-        ist.eps[endp as usize].count = 0;
-        ist.eps[endp as usize].opaque = core::ptr::null();
-        ist.eps[endp as usize].toggle_out = 0;
+        unsafe {
+            ist.eps.get_unchecked_mut(endp as usize).toggle_in = 1;
+            ist.eps.get_unchecked_mut(endp as usize).count = 0;
+            ist.eps.get_unchecked_mut(endp as usize).opaque = core::ptr::null();
+            ist.eps.get_unchecked_mut(endp as usize).toggle_out = 0;
+        }
     }
 
     unsafe extern "C" fn usb_pid_handle_out(
