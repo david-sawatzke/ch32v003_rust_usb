@@ -9,8 +9,10 @@ use hal::gpio::{Input, Level, Output, Pin, Pull, Speed};
 use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 mod usb;
-use usb::{UsbEndpoint, UsbIf, RV003USB_INTERNAL_DATA};
+use usb::{UsbEndpoint, UsbIf};
 mod descriptors;
+
+pub static mut USB_IF: *mut UsbIf<0x4001_1000usize, 3, 2, 3> = core::ptr::null_mut();
 
 #[qingke_rt::entry]
 fn main() -> ! {
@@ -32,11 +34,8 @@ fn main() -> ! {
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
     // TODO needs to have a fixed address
-    let mut usb: UsbIf<0x4001_1000usize, 3, 2, 3> = UsbIf::default();
-
-    // Do this here to force the rust compiler to emit the functions, so they can be linked
-    // TODO find a different way to do this
-    usb.enable();
+    let mut usb = UsbIf::default();
+    unsafe { USB_IF = &mut usb as *mut _ };
 
     let exti = &pac::EXTI;
     let afio = &pac::AFIO;
@@ -129,8 +128,7 @@ fn usb_handle_user_in_request<
 
 #[interrupt]
 fn EXTI7_0_IRQHandler() {
-    let data: &mut UsbIf<0x4001_1000, 3, 2, 3> =
-        unsafe { &mut *(RV003USB_INTERNAL_DATA as *mut UsbIf<0x4001_1000, 3, 2, 3>) };
+    let data = unsafe { &mut *(USB_IF) };
     unsafe { data.usb_interrupt_handler(0, 0, 0, 0) };
 }
 

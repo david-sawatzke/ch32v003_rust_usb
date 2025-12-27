@@ -24,8 +24,6 @@ use crate::descriptors;
 use crate::usb_handle_user_in_request;
 use core::mem;
 
-pub static mut RV003USB_INTERNAL_DATA: *mut u8 = core::ptr::null_mut();
-
 const ENDPOINT0_SIZE: u32 = 8;
 
 pub struct UsbEndpoint {
@@ -92,14 +90,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> Defaul
 impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     UsbIf<USB_BASE, DP, DM, EPS>
 {
-    // Advanced "pfusch" to force rust to make the functions of the generic and keep it until linker phase
-    // Hopefully can be dropped in the future
-    // I'm unsure if we can drop this entirely in the future
-    // Probably not for the interrupt handler?
-    pub(crate) fn enable(&mut self) {
-        unsafe { RV003USB_INTERNAL_DATA = self as *mut _ as *mut u8 };
-    }
-
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive(
         &mut self,
