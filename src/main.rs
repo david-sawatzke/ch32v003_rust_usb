@@ -133,9 +133,7 @@ fn usb_handle_user_in_request<
         }
     } else {
         // If it's a control transfer, empty it.
-        unsafe {
-            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_empty(sendtok);
-        }
+        UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_empty(sendtok);
     }
 }
 

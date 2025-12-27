@@ -28,9 +28,6 @@ pub static mut RV003USB_INTERNAL_DATA: *mut u8 = core::ptr::null_mut();
 
 const ENDPOINT0_SIZE: u32 = 8;
 
-// Needs a fixed size, index is determined by shift in assembly
-// TODO figure out a way to do that programmatically
-#[repr(C)]
 pub struct UsbEndpoint {
     count: u32,
     toggle_in: u32,
@@ -957,32 +954,19 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         unsafe { Self::usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
     }
 
-    #[unsafe(naked)]
     unsafe extern "C" fn usb_pid_handle_ack(
-        dummy: u32,
-        data: *mut u8,
-        dummy1: u32,
-        dummy2: u32,
+        _dummy: u32,
+        _data: *mut u8,
+        _dummy1: u32,
+        _dummy2: u32,
         ist: &mut Self,
     ) {
-        core::arch::naked_asm!(
-            "c.lw a2, {CURRENT_ENDP_OFFSET}(a4)", //ist->current_endpoint -> endp;
-            "c.slli a2, 5", // TODO what's happening here? ⇒ Fixed endpoint struct size
-            "c.add a2, a4",
-            "c.addi a2, {ENDP_OFFSET}", // UsbEndpoint eps[ENDPOINTS];
-            "c.lw a0, ({EP_TOGGLE_IN_OFFSET})(a2)", // toggle_in=!toggle_in
-            "c.li a1, 1",
-            "c.xor a0, a1",
-            "c.sw a0, ({EP_TOGGLE_IN_OFFSET})(a2)",
-            "c.lw a0, ({EP_COUNT_OFFSET})(a2)", // count_in
-            "c.addi a0, 1",
-            "c.sw a0, ({EP_COUNT_OFFSET})(a2)",
-            "ret",
-                CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
-                ENDP_OFFSET = const mem::offset_of!(Self, eps),
-                EP_TOGGLE_IN_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_in),
-                EP_COUNT_OFFSET = const mem::offset_of!(UsbEndpoint, count),
-        );
+        ist.eps
+            .get_unchecked_mut(ist.current_endpoint as usize)
+            .toggle_in ^= 1;
+        ist.eps
+            .get_unchecked_mut(ist.current_endpoint as usize)
+            .count += 1;
     }
 
     unsafe extern "C" fn usb_pid_handle_setup(
