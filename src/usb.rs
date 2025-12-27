@@ -24,12 +24,8 @@ use crate::descriptors;
 use crate::usb_handle_user_in_request;
 use core::mem;
 
-pub static mut RV003USB_INTERNAL_DATA: *mut u8 = unsafe { mem::zeroed() };
+pub static mut RV003USB_INTERNAL_DATA: *mut u8 = core::ptr::null_mut();
 
-extern "C" {
-    pub fn usb_send_empty(token: u32);
-    pub fn usb_send_data(data: *const u8, length: u32, poly_function: u32, token: u32);
-}
 const ENDPOINT0_SIZE: u32 = 8;
 
 // Needs a fixed size, index is determined by shift in assembly
@@ -104,11 +100,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     // I'm unsure if we can drop this entirely in the future
     // Probably not for the interrupt handler?
     pub(crate) fn enable(&mut self) {
-        unsafe { core::arch::asm!("// {}", sym Self::usb_send_empty) }
-        unsafe { core::arch::asm!("// {}", sym Self::usb_send_data) }
         unsafe { core::arch::asm!("// {}", sym Self::usb_interrupt_handler) }
         unsafe { RV003USB_INTERNAL_DATA = self as *mut _ as *mut u8 };
     }
+
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive() {
         core::arch::naked_asm!(
@@ -163,12 +158,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         // TODO get periph register addresses from/to proper addr
     }
 
-    #[allow(no_mangle_generic_items)]
-    #[no_mangle]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_send_empty(token: u32) {
         core::arch::naked_asm!(
-        ".global usb_send_empty",
         "c.mv a3, a0",
         "la a0, always0",
         "li a1, 2",
@@ -178,8 +170,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    #[allow(no_mangle_generic_items)]
-    #[no_mangle]
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_send_data(
@@ -195,7 +185,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.bnez \\freereg, 1b",
             ".endm",
             // Needed ...
-            ".global usb_send_data",
             ".balign 4",
             //void usb_send_data( uint8_t * data, uint32_t length, uint32_t poly_function, uint32_t token );
             "addi	sp,sp,-16",

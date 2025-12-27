@@ -9,7 +9,7 @@ use hal::pac;
 use {ch32_hal as hal, panic_halt as _};
 
 mod usb;
-use usb::{usb_send_data, usb_send_empty, UsbEndpoint, UsbIf};
+use usb::{UsbEndpoint, UsbIf};
 mod descriptors;
 
 #[qingke_rt::entry]
@@ -75,7 +75,7 @@ fn usb_handle_user_in_request<
     _scratchpad: *mut u8,
     endp: i32,
     sendtok: u32,
-    _ist: &mut UsbIf<USB_BASE, DP, DM, EPS>,
+    usbif: &mut UsbIf<USB_BASE, DP, DM, EPS>,
 ) {
     if endp == 1 {
         // Mouse (4 bytes)
@@ -105,12 +105,22 @@ fn usb_handle_user_in_request<
             //     }
             //     _ => {}
             // }
-            usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
+            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_data(
+                TSAJOYSTICK_MOUSE.as_ptr(),
+                4,
+                0,
+                sendtok,
+            );
         }
     } else if endp == 2 {
         // Keyboard (8 bytes)
         unsafe {
-            usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
+            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_data(
+                TSAJOYSTICK_KEYBOARD.as_ptr(),
+                8,
+                0,
+                sendtok,
+            );
 
             //I_KEYBOARD += 1;
 
@@ -124,7 +134,7 @@ fn usb_handle_user_in_request<
     } else {
         // If it's a control transfer, empty it.
         unsafe {
-            usb_send_empty(sendtok);
+            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_empty(sendtok);
         }
     }
 }
