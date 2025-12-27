@@ -996,48 +996,28 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    #[unsafe(naked)]
     pub unsafe extern "C" fn usb_pid_handle_setup(
-        addr: u32,
-        data: *mut u8,
+        _addr: u32,
+        _data: *mut u8,
         endp: u32,
-        unused: u32,
+        _unused: u32,
         ist: &mut Self,
     ) {
-        core::arch::naked_asm!(
-        "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
-        "c.li a1, 1",
-        "c.sw a1, {SETUP_REQUEST_OFFSET}(a4)", //ist->setup_request = 1;
-        "c.slli a2, 3+2",
-        "c.add a2, a4",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_IN_OFFSET})(a2)", //e->toggle_in = 1;
-        "c.li a1, 0",
-        "c.sw a1, ({ENDP_OFFSET}+{EP_COUNT_OFFSET})(a2)", //e->count = 0;
-        "c.sw a1, ({ENDP_OFFSET}+{EP_OPAQUE_OFFSET})(a2)", //e->opaque = 0;
-        "c.sw a1, ({ENDP_OFFSET}+{EP_TOGGLE_OUT_OFFSET})(a2)", //e->toggle_out = 0;
-        "ret",
-        CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
-        ENDP_OFFSET = const mem::offset_of!(Self, eps),
-        SETUP_REQUEST_OFFSET = const mem::offset_of!(Self, setup_request),
-        EP_COUNT_OFFSET = const mem::offset_of!(UsbEndpoint, count),
-        EP_TOGGLE_IN_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_in),
-        EP_TOGGLE_OUT_OFFSET = const mem::offset_of!(UsbEndpoint, toggle_out),
-        EP_OPAQUE_OFFSET = const mem::offset_of!(UsbEndpoint, opaque),
-        );
+        ist.current_endpoint = endp;
+        ist.setup_request = 1;
+        ist.eps[endp as usize].toggle_in = 1;
+        ist.eps[endp as usize].count = 0;
+        ist.eps[endp as usize].opaque = core::ptr::null();
+        ist.eps[endp as usize].toggle_out = 0;
     }
 
-    #[unsafe(naked)]
     pub unsafe extern "C" fn usb_pid_handle_out(
-        addr: u32,
-        data: *mut u8,
+        _addr: u32,
+        _data: *mut u8,
         endp: u32,
-        unused: u32,
+        _unused: u32,
         ist: &mut Self,
     ) {
-        core::arch::naked_asm!(
-            "c.sw a2, {CURRENT_ENDP_OFFSET}(a4)", // ist->current_endpoint = endp
-            "ret",
-            CURRENT_ENDP_OFFSET = const mem::offset_of!(Self, current_endpoint),
-        );
+        ist.current_endpoint = endp;
     }
 }
