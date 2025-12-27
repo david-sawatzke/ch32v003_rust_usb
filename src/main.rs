@@ -105,22 +105,12 @@ fn usb_handle_user_in_request<
             //     }
             //     _ => {}
             // }
-            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_data(
-                TSAJOYSTICK_MOUSE.as_ptr(),
-                4,
-                0,
-                sendtok,
-            );
+            usbif.usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
         }
     } else if endp == 2 {
         // Keyboard (8 bytes)
         unsafe {
-            UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_data(
-                TSAJOYSTICK_KEYBOARD.as_ptr(),
-                8,
-                0,
-                sendtok,
-            );
+            usbif.usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
 
             //I_KEYBOARD += 1;
 
@@ -133,7 +123,7 @@ fn usb_handle_user_in_request<
         }
     } else {
         // If it's a control transfer, empty it.
-        UsbIf::<USB_BASE, DP, DM, EPS>::usb_send_empty(sendtok);
+        usbif.usb_send_empty(sendtok);
     }
 }
 

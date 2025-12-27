@@ -162,13 +162,14 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         // TODO get periph register addresses from/to proper addr
     }
 
-    pub(crate) fn usb_send_empty(token: u32) {
-        unsafe { Self::usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token) };
+    pub(crate) fn usb_send_empty(&mut self, token: u32) {
+        unsafe { self.usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token) };
     }
 
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_send_data(
+        &mut self,
         data: *const u8,
         length: u32,
         poly_function: u32,
@@ -182,10 +183,14 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             ".endm",
             // Needed ...
             ".balign 4",
-            //void usb_send_data( uint8_t * data, uint32_t length, uint32_t poly_function, uint32_t token );
             "addi	sp,sp,-16",
             "sw	s0, 0(sp)",
             "sw	s1, 4(sp)",
+            // TODO shuffle this properly
+            "mv a0, a1",
+            "mv a1, a2",
+            "mv a2, a3",
+            "mv a3, a4",
 
             "la a5, {USB_GPIO_BASE}",
 
@@ -770,28 +775,34 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         "addi a5, a0, -0b01001011",
 
 
-        // Recover self pointer from previousy
-        "lw a4, 56(sp)",
+        // Shuffle registers around
+        // TODO do this before
+        "mv a4, a3",
+        "mv a3, a2",
+        "mv a2, a1",
+        "mv a1, a0",
+        // Recover self pointer from previous
+        "lw a0, 56(sp)",
 
         // ACK doesn't need good CRC.
         "c.beqz a5, {usb_pid_handle_ack}",
 
         // Next, check for tokens.
-        "c.bnez a3, crc_for_tokens_would_be_bad_maybe_data",
+        "c.bnez a4, crc_for_tokens_would_be_bad_maybe_data",
         "may_be_a_token:",
         // Our CRC is 0, so we might be a token.
 
         // Do token-y things.
-        "lhu a2, 0(a1)",
-        "andi a0, a2, 0x7f", // addr
-        "c.srli a2, 7",
-        "c.andi a2, 0xf", // endp
+        "lhu a3, 0(a2)",
+        "andi a1, a3, 0x7f", // addr
+        "c.srli a3, 7",
+        "c.andi a3, 0xf", // endp
         "li s0, {ENDPOINTS}",
-        "bgeu a2, s0, done_usb_message", // Make sure < ENDPOINTS
-        "c.beqz a0,  yes_check_tokens",
+        "bgeu a3, s0, done_usb_message", // Make sure < ENDPOINTS
+        "c.beqz a1,  yes_check_tokens",
         // Otherwise, we might have our assigned address.
-        "lbu s0, {MY_ADDRESS_OFFSET_BYTES}(a4)",
-        "bne s0, a0, done_usb_message", // addr != 0 && addr != ours.
+        "lbu s0, {MY_ADDRESS_OFFSET_BYTES}(a0)",
+        "bne s0, a1, done_usb_message", // addr != 0 && addr != ours.
         "yes_check_tokens:",
         "addi a5, a5, (0b01001011-0b10000111)",
         "c.beqz a5, {usb_pid_handle_out}",
@@ -805,16 +816,16 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         // CRC is nonzero. (Good for Data packets)
         "crc_for_tokens_would_be_bad_maybe_data:",
         "li s0, 0xb001", // UGH: You can't use the CRC16 in reverse :(
-        "c.sub a3, s0",
-        "c.bnez a3, done_usb_message_in",
+        "c.sub a4, s0",
+        "c.bnez a4, done_usb_message_in",
         // Good CRC!!
-        "sub a3, t2, a1", //a3 = # of bytes read..
-        "c.addi a3, 1",
+        "sub a4, t2, a2", //a4 = # of bytes read..
+        "c.addi a4, 1",
         "addi a5, a5, (0b01001011-0b11000011)",
-        "c.li a2, 0",
+        "c.li a3, 0",
         "c.beqz a5, {usb_pid_handle_data}",
         "c.addi a5, (0b11000011-0b11010010)",
-        "c.li a2, 1",
+        "c.li a3, 1",
         "c.beqz a5, {usb_pid_handle_data}",
 
         "done_usb_message:",
@@ -865,23 +876,17 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    extern "C" fn usb_pid_handle_in(
-        _addr: u32,
-        data: *mut u8,
-        endp: u32,
-        _unused: u32,
-        ist: &mut Self,
-    ) {
-        ist.current_endpoint = endp;
+    extern "C" fn usb_pid_handle_in(&mut self, _addr: u32, data: *mut u8, endp: u32, _unused: u32) {
+        self.current_endpoint = endp;
 
-        let e = &mut ist.eps[endp as usize];
+        let e = &mut self.eps[endp as usize];
         let sendtok = if e.toggle_in != 0 {
             0b01001011
         } else {
             0b11000011
         };
         if (e.custom != 0) || (endp != 0) {
-            usb_handle_user_in_request(e, data, endp as i32, sendtok, ist);
+            usb_handle_user_in_request(e, data, endp as i32, sendtok, self);
             return;
         }
         let tsend = e.opaque;
@@ -893,32 +898,32 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         };
         let sendnow = tsend.wrapping_add(offset as usize);
         if tosend <= 0 {
-            Self::usb_send_empty(sendtok);
+            self.usb_send_empty(sendtok);
         } else {
-            unsafe { Self::usb_send_data(sendnow, tosend, 0, sendtok) };
+            unsafe { self.usb_send_data(sendnow, tosend, 0, sendtok) };
         }
     }
     extern "C" fn usb_pid_handle_data(
+        &mut self,
         _this_token: u32,
         data: *mut u8,
         which_data: u32,
         _length: u32,
-        ist: &mut Self,
     ) {
-        let epno = ist.current_endpoint;
+        let epno = self.current_endpoint;
 
-        let e = &mut ist.eps[epno as usize];
+        let e = &mut self.eps[epno as usize];
 
         // Already received this packet.
         if e.toggle_out != which_data {
             unsafe {
-                Self::usb_send_data(core::ptr::null(), 0, 2, 0xD2); // Send ACK
+                self.usb_send_data(core::ptr::null(), 0, 2, 0xD2); // Send ACK
             }
             return;
         }
         e.toggle_out = !e.toggle_out;
 
-        if ist.setup_request != 0 {
+        if self.setup_request != 0 {
             let s = unsafe { &mut *(data as *mut UsbUrb) };
             let wvi = s.l_value_lsb_index_msb;
             let w_length = s.w_length;
@@ -927,7 +932,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             e.opaque = core::ptr::null_mut();
             e.custom = 0;
             e.max_len = 0;
-            ist.setup_request = 0;
+            self.setup_request = 0;
 
             // We shift down because we don't care if USB_RECIP_INTERFACE is set or not.
             // Otherwise we have to write extra code to handle each case if it's set or
@@ -943,52 +948,52 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
                 e.max_len = if sw_len < el_len { sw_len } else { el_len };
             } else if req_shl == (0x0500 >> 1) {
                 // SET_ADDRESS = 0x05
-                ist.my_address = wvi;
+                self.my_address = wvi;
             }
         }
         // Got the right data. Acknowledge.
-        unsafe { Self::usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
+        unsafe { self.usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
     }
 
     unsafe extern "C" fn usb_pid_handle_ack(
+        &mut self,
         _dummy: u32,
         _data: *mut u8,
         _dummy1: u32,
         _dummy2: u32,
-        ist: &mut Self,
     ) {
-        ist.eps
-            .get_unchecked_mut(ist.current_endpoint as usize)
+        self.eps
+            .get_unchecked_mut(self.current_endpoint as usize)
             .toggle_in ^= 1;
-        ist.eps
-            .get_unchecked_mut(ist.current_endpoint as usize)
+        self.eps
+            .get_unchecked_mut(self.current_endpoint as usize)
             .count += 1;
     }
 
     unsafe extern "C" fn usb_pid_handle_setup(
+        &mut self,
         _addr: u32,
         _data: *mut u8,
         endp: u32,
         _unused: u32,
-        ist: &mut Self,
     ) {
-        ist.current_endpoint = endp;
-        ist.setup_request = 1;
+        self.current_endpoint = endp;
+        self.setup_request = 1;
         unsafe {
-            ist.eps.get_unchecked_mut(endp as usize).toggle_in = 1;
-            ist.eps.get_unchecked_mut(endp as usize).count = 0;
-            ist.eps.get_unchecked_mut(endp as usize).opaque = core::ptr::null();
-            ist.eps.get_unchecked_mut(endp as usize).toggle_out = 0;
+            self.eps.get_unchecked_mut(endp as usize).toggle_in = 1;
+            self.eps.get_unchecked_mut(endp as usize).count = 0;
+            self.eps.get_unchecked_mut(endp as usize).opaque = core::ptr::null();
+            self.eps.get_unchecked_mut(endp as usize).toggle_out = 0;
         }
     }
 
     unsafe extern "C" fn usb_pid_handle_out(
+        &mut self,
         _addr: u32,
         _data: *mut u8,
         endp: u32,
         _unused: u32,
-        ist: &mut Self,
     ) {
-        ist.current_endpoint = endp;
+        self.current_endpoint = endp;
     }
 }
