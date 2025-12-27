@@ -883,7 +883,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    pub extern "C" fn usb_pid_handle_in(
+    extern "C" fn usb_pid_handle_in(
         _addr: u32,
         data: *mut u8,
         endp: u32,
@@ -916,7 +916,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             unsafe { Self::usb_send_data(sendnow, tosend, 0, sendtok) };
         }
     }
-    pub extern "C" fn usb_pid_handle_data(
+    extern "C" fn usb_pid_handle_data(
         _this_token: u32,
         data: *mut u8,
         which_data: u32,
@@ -969,7 +969,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     }
 
     #[unsafe(naked)]
-    pub unsafe extern "C" fn usb_pid_handle_ack(
+    unsafe extern "C" fn usb_pid_handle_ack(
         dummy: u32,
         data: *mut u8,
         dummy1: u32,
@@ -996,7 +996,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    pub unsafe extern "C" fn usb_pid_handle_setup(
+    unsafe extern "C" fn usb_pid_handle_setup(
         _addr: u32,
         _data: *mut u8,
         endp: u32,
@@ -1011,7 +1011,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         ist.eps[endp as usize].toggle_out = 0;
     }
 
-    pub unsafe extern "C" fn usb_pid_handle_out(
+    unsafe extern "C" fn usb_pid_handle_out(
         _addr: u32,
         _data: *mut u8,
         endp: u32,
