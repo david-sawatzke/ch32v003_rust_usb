@@ -129,7 +129,7 @@ fn usb_handle_user_in_request<
 #[interrupt]
 fn EXTI7_0_IRQHandler() {
     let data = unsafe { &mut *(USB_IF) };
-    unsafe { data.usb_interrupt_handler(0, 0, 0, 0) };
+    unsafe { data.usb_interrupt_handler() };
 }
 
 mod _vectors {

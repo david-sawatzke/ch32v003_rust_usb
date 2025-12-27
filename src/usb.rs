@@ -91,13 +91,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     UsbIf<USB_BASE, DP, DM, EPS>
 {
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn handle_se0_keepalive(
-        &mut self,
-        _dummy0: u32,
-        _dummy1: u32,
-        _dummy2: u32,
-        _dummy3: u32,
-    ) {
+    pub(crate) unsafe extern "C" fn handle_se0_keepalive(&mut self) {
         // NOTE: this code can *almost* be converted to rust
         // With the single exception that t0-t2 aren't saved by our caller,
         // which is in a performance critical section, so doesn't *quite* follow
@@ -446,13 +440,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
     // NOTE this function should never be called
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_interrupt_handler(
-        &mut self,
-        _dummy0: u32,
-        _dummy1: u32,
-        _dummy2: u32,
-        _dummy3: u32,
-    ) {
+    pub(crate) unsafe extern "C" fn usb_interrupt_handler(&mut self) {
         // TODO this doesn't *need* to be an naked function
         // a few cycles of latency can be tolerated
         core::arch::naked_asm!(
@@ -866,7 +854,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    extern "C" fn usb_pid_handle_in(&mut self, _addr: u32, data: *mut u8, endp: u32, _unused: u32) {
+    extern "C" fn usb_pid_handle_in(&mut self, _addr: u32, data: *mut u8, endp: u32) {
         self.current_endpoint = endp;
 
         let e = &mut self.eps[endp as usize];
@@ -945,13 +933,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         unsafe { self.usb_send_data(core::ptr::null_mut(), 0, 2, 0xD2) }; // Send ACK
     }
 
-    unsafe extern "C" fn usb_pid_handle_ack(
-        &mut self,
-        _dummy: u32,
-        _data: *mut u8,
-        _dummy1: u32,
-        _dummy2: u32,
-    ) {
+    unsafe extern "C" fn usb_pid_handle_ack(&mut self, _dummy: u32, _data: *mut u8) {
         self.eps
             .get_unchecked_mut(self.current_endpoint as usize)
             .toggle_in ^= 1;
@@ -960,13 +942,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             .count += 1;
     }
 
-    unsafe extern "C" fn usb_pid_handle_setup(
-        &mut self,
-        _addr: u32,
-        _data: *mut u8,
-        endp: u32,
-        _unused: u32,
-    ) {
+    unsafe extern "C" fn usb_pid_handle_setup(&mut self, _addr: u32, _data: *mut u8, endp: u32) {
         self.current_endpoint = endp;
         self.setup_request = 1;
         unsafe {
@@ -977,13 +953,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         }
     }
 
-    unsafe extern "C" fn usb_pid_handle_out(
-        &mut self,
-        _addr: u32,
-        _data: *mut u8,
-        endp: u32,
-        _unused: u32,
-    ) {
+    unsafe extern "C" fn usb_pid_handle_out(&mut self, _addr: u32, _data: *mut u8, endp: u32) {
         self.current_endpoint = endp;
     }
 }
