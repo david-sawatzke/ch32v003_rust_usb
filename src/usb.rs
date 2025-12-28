@@ -111,13 +111,13 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         }
     }
 
-    pub(crate) fn usb_send_empty(&mut self, token: u32) {
+    pub fn usb_send_empty(&mut self, token: u32) {
         unsafe { self.usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token) };
     }
 
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_send_data(
+    pub unsafe extern "C" fn usb_send_data(
         &mut self,
         data: *const u8,
         length: u32,
@@ -404,7 +404,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn usb_interrupt_handler(&mut self) {
+    pub unsafe extern "C" fn usb_interrupt_handler(&mut self) {
         // TODO this doesn't *need* to be an naked function
         // a few cycles of latency can be tolerated
         core::arch::naked_asm!(
