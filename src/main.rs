@@ -12,6 +12,7 @@ mod usb;
 use usb::{UsbEndpoint, UsbIf};
 mod descriptors;
 
+// This is GPIOD, but i haven't figured out how to do this nicely yet
 static mut USB_IF: *mut UsbIf<0x4001_1000usize, 3, 2, 3> = core::ptr::null_mut();
 
 static mut I_MOUSE: i32 = 0;
@@ -36,7 +37,6 @@ fn main() -> ! {
     let port_number = p.PC2.port();
     let mut _usb_dm = Input::new(p.PC2, Pull::None);
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
-    // This is GPIOD, but i haven't figured out how to do this nicely yet
     // TODO needs to have a fixed address
     let mut usb = UsbIf::new(
         |_e, _scratchpad, endp, sendtok, usbif| {

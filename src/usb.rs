@@ -20,7 +20,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-use ch32_hal::pac::{FLASH, PFIC, RCC};
+use ch32_hal::pac::{FLASH, PFIC, RCC, SYSTICK};
 use core::hint::unreachable_unchecked;
 use core::mem;
 
@@ -64,8 +64,7 @@ pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: u
     setup_request: u32,
     reboot_armed: u32,
     last_se0_cyccount: u32,
-    delta_se0_cyccount: i32,
-    se0_windup: u32,
+    se0_windup: i32,
     usb_handle_user_in_request: fn(*mut UsbEndpoint, *mut u8, i32, u32, &mut Self),
     get_descriptor_info: fn(u32) -> (*const u8, u16),
     eps: [UsbEndpoint; EPS], // ENDPOINTS
@@ -84,67 +83,32 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             setup_request: 0,
             reboot_armed: 0,
             last_se0_cyccount: 0,
-            delta_se0_cyccount: 0,
             se0_windup: 0,
             usb_handle_user_in_request,
             get_descriptor_info,
             eps: [const { UsbEndpoint::new() }; EPS],
         }
     }
-    #[unsafe(naked)]
-    pub(crate) unsafe extern "C" fn handle_se0_keepalive(&mut self) {
-        // NOTE: this code can *almost* be converted to rust
-        // With the single exception that t0-t2 aren't saved by our caller,
-        // which is in a performance critical section, so doesn't *quite* follow
-        // the normal calling convention
-        core::arch::naked_asm!(
-            // In here, we want to do smart stuff with the
-            // 1ms tick.
-            "la a4, {SYSTICK_CNT}",
-            // self is in a0
-            "c.lw a1, {LAST_SE0_OFFSET}(a0)", //last cycle count   last_se0_cyccount
-            "c.lw a2, 0(a4)", //this cycle count
-            "c.sw a2, {LAST_SE0_OFFSET}(a0)", //store it back to last_se0_cyccount
-            "c.sub a2, a1",
-            "c.sw a2, {DELTA_SE0_OFFSET}(a0)", //record delta_se0_cyccount
-            "li a1, 48000",
-            "c.sub a2, a1",
-            // This is our deviance from 48MHz.
 
-            // Make sure we aren't in left field.
-            "li a5, 4000",
-            "bge a2, a5, 1f",
-            "li a5, -4000",
-            "blt a2, a5, 1f",
-            "c.lw a1, {SE0_WINDUP_OFFSET}(a0)", // load windup se0_windup
-            "c.add a1, a2",
-            "c.sw a1, {SE0_WINDUP_OFFSET}(a0)", // save windup
-            // No further adjustments
-            "beqz a1, 1f",
-            "la a4, {RCC_CTRL}",
-            "lw a0, 0(a4)",
-            "srli a2, a0, 3", // Extract HSI Trim.
-            "andi a2, a2, 0b11111",
-            "li a5, 0xffffff07",
-            "and a0, a0, a5", // Mask off non-HSI
-            // Decimate windup - use as HSI-Trim.
-            "neg a1, a1
-            srai a2, a1, 9",
-            "addi a2, a2, 16  // add HSI offset.",
-            // Put trim in place in register.
-            "slli a2, a2, 3",
-            "or a0, a0, a2",
-            "sw a0, 0(a4)",
-            "1:",
-            "ret",
-            SE0_WINDUP_OFFSET = const mem::offset_of!(Self, se0_windup),
-            LAST_SE0_OFFSET = const mem::offset_of!(Self, last_se0_cyccount),
-            DELTA_SE0_OFFSET = const mem::offset_of!(Self, delta_se0_cyccount),
-            RCC_CTRL = const 0x40021000, // RCC.CTRL
-            SYSTICK_CNT = const 0xE000F008 as u32,
+    // This logic is mostly equivalent to the rv003usb assembler code
+    unsafe extern "C" fn handle_se0_keepalive(&mut self) {
+        const TARGET_CYCLES: i32 = 48000; // 48 MHz
+        const LIMIT: i32 = 4000;
 
-        );
-        // TODO get periph register addresses from/to proper addr
+        let systick_cnt = SYSTICK.cnt().read();
+        let delta_se0_cyccount = systick_cnt.wrapping_sub(self.last_se0_cyccount);
+        self.last_se0_cyccount = systick_cnt;
+        let deviance = delta_se0_cyccount as i32 - TARGET_CYCLES;
+
+        // If outside our limit
+        if deviance < LIMIT || deviance >= -LIMIT {
+            self.se0_windup += deviance;
+            let hsi_trim_offset = (-self.se0_windup) >> 9;
+            // 16 is the default value of the trim
+            let hsi_trim = hsi_trim_offset + 16;
+
+            RCC.ctlr().modify(|w| w.set_hsitrim(hsi_trim as u8));
+        }
     }
 
     pub(crate) fn usb_send_empty(&mut self, token: u32) {
@@ -813,8 +777,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 
 
         "ret_from_se0:",
-
-        "interrupt_complete:",
         "lw ra, 52(sp)",
         // Acknowledge interrupt.
         // EXTI->INTFR = 1<<4
