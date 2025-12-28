@@ -21,7 +21,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 use crate::descriptors;
-use crate::usb_handle_user_in_request;
 use ch32_hal::pac::{FLASH, PFIC, RCC};
 use core::hint::unreachable_unchecked;
 use core::mem;
@@ -68,13 +67,16 @@ pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: u
     last_se0_cyccount: u32,
     delta_se0_cyccount: i32,
     se0_windup: u32,
+    usb_handle_user_in_request: fn(*mut UsbEndpoint, *mut u8, i32, u32, &mut Self),
     eps: [UsbEndpoint; EPS], // ENDPOINTS
 }
 
-impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> Default
-    for UsbIf<USB_BASE, DP, DM, EPS>
+impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
+    UsbIf<USB_BASE, DP, DM, EPS>
 {
-    fn default() -> Self {
+    pub fn new(
+        usb_handle_user_in_request: fn(*mut UsbEndpoint, *mut u8, i32, u32, &mut Self),
+    ) -> Self {
         Self {
             current_endpoint: 0,
             my_address: 0,
@@ -83,14 +85,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> Defaul
             last_se0_cyccount: 0,
             delta_se0_cyccount: 0,
             se0_windup: 0,
+            usb_handle_user_in_request,
             eps: [const { UsbEndpoint::new() }; EPS],
         }
     }
-}
-
-impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
-    UsbIf<USB_BASE, DP, DM, EPS>
-{
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn handle_se0_keepalive(&mut self) {
         // NOTE: this code can *almost* be converted to rust
@@ -878,7 +876,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             unsafe { unreachable_unchecked() };
         }
         if (e.custom != 0) || (endp != 0) {
-            usb_handle_user_in_request(e, data, endp as i32, sendtok, self);
+            (self.usb_handle_user_in_request)(e, data, endp as i32, sendtok, self);
             return;
         }
         let tsend = e.opaque;

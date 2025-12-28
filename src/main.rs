@@ -12,8 +12,12 @@ mod usb;
 use usb::{UsbEndpoint, UsbIf};
 mod descriptors;
 
-pub static mut USB_IF: *mut UsbIf<0x4001_1000usize, 3, 2, 3> = core::ptr::null_mut();
+static mut USB_IF: *mut UsbIf<0x4001_1000usize, 3, 2, 3> = core::ptr::null_mut();
 
+static mut I_MOUSE: i32 = 0;
+static mut TSAJOYSTICK_MOUSE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+static mut I_KEYBOARD: i32 = 0;
+static mut TSAJOYSTICK_KEYBOARD: [u8; 8] = [0x00; 8];
 #[qingke_rt::entry]
 fn main() -> ! {
     // hal::debug::SDIPrint::enable();
@@ -34,7 +38,58 @@ fn main() -> ! {
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
     // TODO needs to have a fixed address
-    let mut usb = UsbIf::default();
+    let mut usb = UsbIf::new(|_e, _scratchpad, endp, sendtok, usbif| {
+        if endp == 1 {
+            // Mouse (4 bytes)
+            unsafe {
+                I_MOUSE += 1;
+                let mut mode = I_MOUSE >> 2;
+
+                TSAJOYSTICK_MOUSE[1] = 0;
+                TSAJOYSTICK_MOUSE[2] = 0;
+                // Move the mouse right, down, left and up in a square.
+                if I_MOUSE & 0b11 == 0 {
+                    match mode & 3 {
+                        0 => {
+                            TSAJOYSTICK_MOUSE[1] = 1;
+                            TSAJOYSTICK_MOUSE[2] = 0;
+                        }
+                        1 => {
+                            TSAJOYSTICK_MOUSE[1] = 0;
+                            TSAJOYSTICK_MOUSE[2] = 1;
+                        }
+                        2 => {
+                            TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
+                            TSAJOYSTICK_MOUSE[2] = 0;
+                        }
+                        3 => {
+                            TSAJOYSTICK_MOUSE[1] = 0;
+                            TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
+                        }
+                        _ => {}
+                    }
+                }
+                usbif.usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
+            }
+        } else if endp == 2 {
+            // Keyboard (8 bytes)
+            unsafe {
+                usbif.usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
+
+                //I_KEYBOARD += 1;
+
+                // Press a Key every second or so.
+                if (I_KEYBOARD & 0x7f) == 1 {
+                    TSAJOYSTICK_KEYBOARD[4] = 0x05; // 0x05 = "b"; 0x53 = NUMLOCK; 0x39 = CAPSLOCK;
+                } else {
+                    TSAJOYSTICK_KEYBOARD[4] = 0;
+                }
+            }
+        } else {
+            // If it's a control transfer, empty it.
+            usbif.usb_send_empty(sendtok);
+        }
+    });
     unsafe { USB_IF = &mut usb as *mut _ };
 
     let exti = &pac::EXTI;
@@ -55,74 +110,7 @@ fn main() -> ! {
         delay.delay_ms(1000);
         // hal::println!("toggle!");
         // let val = hal::pac::SYSTICK.cnt().read();
-        // hal::println!("systick: {}", val);
-    }
-}
-
-static mut I_MOUSE: i32 = 0;
-static mut TSAJOYSTICK_MOUSE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
-static mut I_KEYBOARD: i32 = 0;
-static mut TSAJOYSTICK_KEYBOARD: [u8; 8] = [0x00; 8];
-
-fn usb_handle_user_in_request<
-    const USB_BASE: usize,
-    const DP: u8,
-    const DM: u8,
-    const EPS: usize,
->(
-    _e: *mut UsbEndpoint,
-    _scratchpad: *mut u8,
-    endp: i32,
-    sendtok: u32,
-    usbif: &mut UsbIf<USB_BASE, DP, DM, EPS>,
-) {
-    if endp == 1 {
-        // Mouse (4 bytes)
-        unsafe {
-            I_MOUSE += 1;
-            let mode = I_MOUSE >> 5;
-
-            TSAJOYSTICK_MOUSE[1] = 0;
-            TSAJOYSTICK_MOUSE[2] = 0;
-            // Move the mouse right, down, left and up in a square.
-            // match mode & 3 {
-            //     0 => {
-            //         TSAJOYSTICK_MOUSE[1] = 1;
-            //         TSAJOYSTICK_MOUSE[2] = 0;
-            //     }
-            //     1 => {
-            //         TSAJOYSTICK_MOUSE[1] = 0;
-            //         TSAJOYSTICK_MOUSE[2] = 1;
-            //     }
-            //     2 => {
-            //         TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
-            //         TSAJOYSTICK_MOUSE[2] = 0;
-            //     }
-            //     3 => {
-            //         TSAJOYSTICK_MOUSE[1] = 0;
-            //         TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
-            //     }
-            //     _ => {}
-            // }
-            usbif.usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
-        }
-    } else if endp == 2 {
-        // Keyboard (8 bytes)
-        unsafe {
-            usbif.usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
-
-            //I_KEYBOARD += 1;
-
-            // Press a Key every second or so.
-            if (I_KEYBOARD & 0x7f) == 1 {
-                TSAJOYSTICK_KEYBOARD[4] = 0x05; // 0x05 = "b"; 0x53 = NUMLOCK; 0x39 = CAPSLOCK;
-            } else {
-                TSAJOYSTICK_KEYBOARD[4] = 0;
-            }
-        }
-    } else {
-        // If it's a control transfer, empty it.
-        usbif.usb_send_empty(sendtok);
+        // hal::println!("systick: {}", val)
     }
 }
 
