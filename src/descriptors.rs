@@ -62,7 +62,7 @@ static DEVICE_DESCRIPTOR: [u8; 18] = [
     0x08, // Max packet size for EP0 (This has to be 8 because of the USB
     // Low-Speed Standard)
     0x09, 0x12, // ID Vendor
-    0x03, 0xc0, // ID Product
+    0x03, 0xd0, // ID Product
     0x02, 0x00, // ID Rev
     1,    // Manufacturer string
     2,    // Product string

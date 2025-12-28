@@ -22,6 +22,8 @@
 // SOFTWARE.
 use crate::descriptors;
 use crate::usb_handle_user_in_request;
+use ch32_hal::pac::{FLASH, PFIC, RCC};
+use core::hint::unreachable_unchecked;
 use core::mem;
 
 const ENDPOINT0_SIZE: u32 = 8;
@@ -63,7 +65,7 @@ pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: u
     current_endpoint: u32,
     my_address: u32,
     setup_request: u32,
-    _reserved: u32,
+    reboot_armed: u32,
     last_se0_cyccount: u32,
     delta_se0_cyccount: i32,
     se0_windup: u32,
@@ -78,7 +80,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> Defaul
             current_endpoint: 0,
             my_address: 0,
             setup_request: 0,
-            _reserved: 0,
+            reboot_armed: 0,
             last_se0_cyccount: 0,
             delta_se0_cyccount: 0,
             se0_windup: 0,
@@ -437,7 +439,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         );
     }
 
-    // NOTE this function should never be called
     #[allow(named_asm_labels)]
     #[unsafe(naked)]
     pub(crate) unsafe extern "C" fn usb_interrupt_handler(&mut self) {
@@ -863,6 +864,20 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         } else {
             0b11000011
         };
+        if self.reboot_armed == 2 {
+            self.usb_send_empty(sendtok);
+
+            // Initiate boot into bootloader
+            FLASH.boot_modekeyp().write(|w| w.set_modekeyr(0x45670123)); // FLASH_KEY1
+            FLASH.boot_modekeyp().write(|w| w.set_modekeyr(0xCDEF89AB)); // FLASH_KEY2
+            FLASH.statr().write(|w| w.set_boot_mode(true)); // 1<<14 is zero, so, boot bootloader code. Unset for user code.
+
+            FLASH.ctlr().write(|w| w.set_lock(true));
+            RCC.rstsckr().modify(|w| w.set_rmvf(true));
+            // reset here
+            PFIC.sctlr().write(|w| w.set_sysreset(true));
+            unsafe { unreachable_unchecked() };
+        }
         if (e.custom != 0) || (endp != 0) {
             usb_handle_user_in_request(e, data, endp as i32, sendtok, self);
             return;
@@ -881,16 +896,19 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             unsafe { self.usb_send_data(sendnow, tosend, 0, sendtok) };
         }
     }
+
     extern "C" fn usb_pid_handle_data(
         &mut self,
         _this_token: u32,
         data: *mut u8,
         which_data: u32,
-        _length: u32,
+        mut length: u32,
     ) {
         let epno = self.current_endpoint;
 
         let e = &mut self.eps[epno as usize];
+
+        length -= 3;
 
         // Already received this packet.
         if e.toggle_out != which_data {
@@ -899,9 +917,23 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             }
             return;
         }
-        e.toggle_out = !e.toggle_out;
+        e.toggle_out = e.toggle_out ^ 0b1;
 
-        if self.setup_request != 0 {
+        if epno != 0 || ((self.setup_request == 0) && length > 3) {
+            if self.reboot_armed > 0 {
+                let data_u32 = data as *const u32;
+                if unsafe {
+                    epno == 0
+                        && data_u32.read_unaligned() == 0xaa3412fd
+                        && (data_u32.add(1).read_unaligned() & 0x00ffffff) == 0x00ddccbb
+                } {
+                    e.count = 7;
+                    self.reboot_armed = 2;
+                } else {
+                    self.reboot_armed = 0;
+                }
+            }
+        } else if self.setup_request != 0 {
             let s = unsafe { &mut *(data as *mut UsbUrb) };
             let wvi = s.l_value_lsb_index_msb;
             let w_length = s.w_length;
@@ -918,6 +950,9 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             let req_shl = s.w_request_type_lsb_request_msb >> 1;
             if req_shl == (0x0921 >> 1) {
                 // Class request (Will be writing)  This is hid_send_feature_report
+                if wvi == 0x000003fd {
+                    self.reboot_armed = 1;
+                }
             } else if req_shl == (0x0680 >> 1) {
                 let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
                 e.opaque = descriptor_addr;
