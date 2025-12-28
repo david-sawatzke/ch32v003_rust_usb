@@ -38,58 +38,61 @@ fn main() -> ! {
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
     // This is GPIOD, but i haven't figured out how to do this nicely yet
     // TODO needs to have a fixed address
-    let mut usb = UsbIf::new(|_e, _scratchpad, endp, sendtok, usbif| {
-        if endp == 1 {
-            // Mouse (4 bytes)
-            unsafe {
-                I_MOUSE += 1;
-                let mut mode = I_MOUSE >> 2;
+    let mut usb = UsbIf::new(
+        |_e, _scratchpad, endp, sendtok, usbif| {
+            if endp == 1 {
+                // Mouse (4 bytes)
+                unsafe {
+                    I_MOUSE += 1;
+                    let mut mode = I_MOUSE >> 2;
 
-                TSAJOYSTICK_MOUSE[1] = 0;
-                TSAJOYSTICK_MOUSE[2] = 0;
-                // Move the mouse right, down, left and up in a square.
-                if I_MOUSE & 0b11 == 0 {
-                    match mode & 3 {
-                        0 => {
-                            TSAJOYSTICK_MOUSE[1] = 1;
-                            TSAJOYSTICK_MOUSE[2] = 0;
+                    TSAJOYSTICK_MOUSE[1] = 0;
+                    TSAJOYSTICK_MOUSE[2] = 0;
+                    // Move the mouse right, down, left and up in a square.
+                    if I_MOUSE & 0b11 == 0 {
+                        match mode & 3 {
+                            0 => {
+                                TSAJOYSTICK_MOUSE[1] = 1;
+                                TSAJOYSTICK_MOUSE[2] = 0;
+                            }
+                            1 => {
+                                TSAJOYSTICK_MOUSE[1] = 0;
+                                TSAJOYSTICK_MOUSE[2] = 1;
+                            }
+                            2 => {
+                                TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
+                                TSAJOYSTICK_MOUSE[2] = 0;
+                            }
+                            3 => {
+                                TSAJOYSTICK_MOUSE[1] = 0;
+                                TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
+                            }
+                            _ => {}
                         }
-                        1 => {
-                            TSAJOYSTICK_MOUSE[1] = 0;
-                            TSAJOYSTICK_MOUSE[2] = 1;
-                        }
-                        2 => {
-                            TSAJOYSTICK_MOUSE[1] = -1i8 as u8; // Need to cast to u8 for the array
-                            TSAJOYSTICK_MOUSE[2] = 0;
-                        }
-                        3 => {
-                            TSAJOYSTICK_MOUSE[1] = 0;
-                            TSAJOYSTICK_MOUSE[2] = -1i8 as u8; // Need to cast to u8 for the array
-                        }
-                        _ => {}
+                    }
+                    usbif.usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
+                }
+            } else if endp == 2 {
+                // Keyboard (8 bytes)
+                unsafe {
+                    usbif.usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
+
+                    //I_KEYBOARD += 1;
+
+                    // Press a Key every second or so.
+                    if (I_KEYBOARD & 0x7f) == 1 {
+                        TSAJOYSTICK_KEYBOARD[4] = 0x05; // 0x05 = "b"; 0x53 = NUMLOCK; 0x39 = CAPSLOCK;
+                    } else {
+                        TSAJOYSTICK_KEYBOARD[4] = 0;
                     }
                 }
-                usbif.usb_send_data(TSAJOYSTICK_MOUSE.as_ptr(), 4, 0, sendtok);
+            } else {
+                // If it's a control transfer, empty it.
+                usbif.usb_send_empty(sendtok);
             }
-        } else if endp == 2 {
-            // Keyboard (8 bytes)
-            unsafe {
-                usbif.usb_send_data(TSAJOYSTICK_KEYBOARD.as_ptr(), 8, 0, sendtok);
-
-                //I_KEYBOARD += 1;
-
-                // Press a Key every second or so.
-                if (I_KEYBOARD & 0x7f) == 1 {
-                    TSAJOYSTICK_KEYBOARD[4] = 0x05; // 0x05 = "b"; 0x53 = NUMLOCK; 0x39 = CAPSLOCK;
-                } else {
-                    TSAJOYSTICK_KEYBOARD[4] = 0;
-                }
-            }
-        } else {
-            // If it's a control transfer, empty it.
-            usbif.usb_send_empty(sendtok);
-        }
-    });
+        },
+        descriptors::get_descriptor_info,
+    );
     unsafe { USB_IF = &mut usb as *mut _ };
 
     let exti = &pac::EXTI;

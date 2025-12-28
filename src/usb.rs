@@ -20,7 +20,6 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-use crate::descriptors;
 use ch32_hal::pac::{FLASH, PFIC, RCC};
 use core::hint::unreachable_unchecked;
 use core::mem;
@@ -68,6 +67,7 @@ pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: u
     delta_se0_cyccount: i32,
     se0_windup: u32,
     usb_handle_user_in_request: fn(*mut UsbEndpoint, *mut u8, i32, u32, &mut Self),
+    get_descriptor_info: fn(u32) -> (*const u8, u16),
     eps: [UsbEndpoint; EPS], // ENDPOINTS
 }
 
@@ -76,6 +76,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 {
     pub fn new(
         usb_handle_user_in_request: fn(*mut UsbEndpoint, *mut u8, i32, u32, &mut Self),
+        get_descriptor_info: fn(u32) -> (*const u8, u16),
     ) -> Self {
         Self {
             current_endpoint: 0,
@@ -86,6 +87,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             delta_se0_cyccount: 0,
             se0_windup: 0,
             usb_handle_user_in_request,
+            get_descriptor_info,
             eps: [const { UsbEndpoint::new() }; EPS],
         }
     }
@@ -951,7 +953,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
                     self.reboot_armed = 1;
                 }
             } else if req_shl == (0x0680 >> 1) {
-                let (descriptor_addr, descriptor_len) = descriptors::get_descriptor_info(wvi);
+                let (descriptor_addr, descriptor_len) = (self.get_descriptor_info)(wvi);
                 e.opaque = descriptor_addr;
                 let sw_len = w_length as u32;
                 let el_len = descriptor_len as u32;
