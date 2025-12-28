@@ -60,7 +60,6 @@ struct UsbUrb {
     w_length: u16,
 }
 
-#[repr(C)]
 pub struct UsbIf<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize> {
     current_endpoint: u32,
     my_address: u32,
@@ -768,7 +767,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 
         // Next, check for tokens.
         "c.bnez a4, crc_for_tokens_would_be_bad_maybe_data",
-        "may_be_a_token:",
+        //"may_be_a_token:", //Label unused
         // Our CRC is 0, so we might be a token.
 
         // Do token-y things.
