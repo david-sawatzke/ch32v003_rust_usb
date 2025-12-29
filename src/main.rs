@@ -37,7 +37,7 @@ fn main() -> ! {
     let port_number = p.PC2.port();
     let mut _usb_dm = Input::new(p.PC2, Pull::None);
     let mut usb_dpu = Output::new(p.PC5, Level::Low, Speed::High);
-    // TODO needs to have a fixed address
+    // NOTE needs to have a fixed address
     let mut usb = UsbIf::new(
         |_e, _scratchpad, endp, sendtok, usbif| {
             if endp == 1 {
@@ -119,6 +119,7 @@ fn main() -> ! {
 
 #[interrupt]
 fn EXTI7_0_IRQHandler() {
+    // IMPORTANT: Keep latency low here
     let data = unsafe { &mut *(USB_IF) };
     unsafe { data.usb_interrupt_handler() };
 }

@@ -727,7 +727,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 
 
         // Shuffle registers around
-        // TODO do this before
+        // TODO do this before?
         "mv a4, a3",
         "mv a3, a2",
         "mv a2, a1",
