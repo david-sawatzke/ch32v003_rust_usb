@@ -21,6 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 use ch32_hal::pac::{FLASH, PFIC, RCC, SYSTICK};
+use core::arch::asm;
 use core::hint::unreachable_unchecked;
 use core::mem;
 
@@ -115,31 +116,25 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         unsafe { self.usb_send_data(&[0_u8, 0_u8] as *const u8, 2, 2, token) };
     }
 
-    #[allow(named_asm_labels)]
-    #[unsafe(naked)]
-    pub unsafe extern "C" fn usb_send_data(
+    #[inline(never)]
+    pub unsafe fn usb_send_data(
         &mut self,
         data: *const u8,
         length: u32,
         poly_function: u32,
         token: u32,
     ) {
-        core::arch::naked_asm!(
+        asm!(
             ".macro nx6p3delay n, freereg",
             "li \\freereg, ((\\n) + 1)",
-            "1: c.addi \\freereg, -1",
-            "c.bnez \\freereg, 1b",
+            "100: c.addi \\freereg, -1",
+            "c.bnez \\freereg, 100b",
             ".endm",
             // Needed ...
             ".balign 4",
             "addi	sp,sp,-16",
             "sw	s0, 0(sp)",
             "sw	s1, 4(sp)",
-            // TODO shuffle this properly
-            "mv a0, a1",
-            "mv a1, a2",
-            "mv a2, a3",
-            "mv a3, a4",
 
             "la a5, {USB_GPIO_BASE}",
 
@@ -167,10 +162,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "ori s0, a3, 0x40",
 
             "li t0, 0x0000",
-            "c.bnez a2, done_poly_check",
+            "c.bnez a2, 1f", // done_poly_check
             "li t0, 0xa001",
             "li a2, 0xffff",
-            "done_poly_check:",
+            "1:", // done_poly_check
 
             "c.slli a1, 3", // bump up one extra to be # of bits
             "mv t2, a1",
@@ -183,12 +178,12 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.li a1, 15", // 15 bits.
 
             //c.nop; c.nop; c.nop;
-            "c.j pre_and_tok_send_inner_loop",
+            "c.j 2f", // pre_and_tok_send_inner_loop
 
             ////////////////////////////////////////////////////////////////////////////
             // Send preamble + token
             ".balign 4",
-            "pre_and_tok_send_inner_loop:",
+            "2:", // pre_and_tok_send_inner_loop
             /* High-level:
             * extract the LSB from s0
             * If it's 0, we FLIP the USB pin state.
@@ -206,7 +201,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             // if a3 is 1, we should NOT flip.
 
             "c.addi a4, -1",
-            "c.bnez a3, pre_and_tok_send_one_bit",
+            "c.bnez a3, 3f", // pre_and_tok_send_one_bit
             //pre_and_tok_send_one_bit:
             //Send 0 bit. (Flip)
             // Flip s1 (our bshr setting) by xoring it.
@@ -218,28 +213,28 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             // DO NOT flip.  Allow a4 to increment.
             // Deliberately unaligned for timing purposes.
             ".balign 4",
-            "pre_and_tok_send_one_bit:",
+            "3:", // pre_and_tok_send_one_bit
             "sw s1, {BSHR_OFFSET}(a5)",
             //Bit stuffing doesn't happen.
             "c.addi a1, -1",
-            "c.beqz a1, pre_and_tok_done_sending_data",
+            "c.beqz a1, 4f", // pre_and_tok_done_sending_data
             "nx6p3delay 2, a3 ;	c.nop", // Free time!
-            "c.j pre_and_tok_send_inner_loop",
+            "c.j 2b", // pre_and_tok_send_inner_loop
             ".balign 4",
-            "pre_and_tok_done_sending_data:",
+            "4:", // pre_and_tok_done_sending_data
             ////////////////////////////////////////////////////////////////////////////
 
             // We have very little time here.  Just enough to do this.
 
             //Restore size.
-            "mv a1, t2//lw  a1, 12(sp)",
-            "c.beqz a1, no_really_done_sending_data", //No actual payload?  Bail!
+            "mv a1, t2",
+            "c.beqz a1, 11f", //No actual payload?  Bail to  no_really_done_sending_data
             "c.addi a1, -1",
             //	beqz t2, no_really_done_sending_data
 
-            "bnez t0, done_poly_check2",
+            "bnez t0, 5f", // done_poly_check2
             "li a2, 0xffff",
-            "done_poly_check2:",
+            "5:", // done_poly_check2
 
 
             // t0 is used for CRC
@@ -266,10 +261,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
 
             //	c.j send_inner_loop
             ".balign 4",
-            "load_next_byte:",
+            "6:", // load next byte
             "lb s0, 0(a0)",
             ".long 0x00150513", // addi a0, a0, 1  (For alignment's sake)
-            "send_inner_loop:",
+            "7:", // send_inner_loop
             /* High-level:
             * extract the LSB from s0
             * If it's 0, we FLIP the USB pin state.
@@ -284,7 +279,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.andi a3, 1",
             // If a3 is 0, we should FLIP
             // if a3 is 1, we should NOT flip.
-            "c.beqz a3, send_zero_bit",
+            "c.beqz a3, 8f", // send_zero_bit
             "c.srli s0, 1", // Shift down into the next bit.
             //send_one_bit:
             //HANDLE_CRC (1 bit)
@@ -295,11 +290,11 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.xor a2, a3",
 
             "c.addi a4, -1",
-            "c.beqz a4, insert_stuffed_bit",
-            "c.j cont_after_jump",
+            "c.beqz a4, 12f", // insert_stuffed_bit
+            "c.j 9f", // cont_after_jump
             //Send 0 bit. (Flip)
             ".balign 4",
-            "send_zero_bit:",
+            "8:",  // send_zero_bit
             "c.srli s0, 1", // Shift down into the next bit.
 
             // Handle CRC (0 bit)
@@ -327,30 +322,29 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "c.xor  a2,a3",
 
             ".balign 4",
-            "cont_after_jump:",
-            "send_end_bit_complete:",
-            "c.beqz a1, done_sending_data",
+            "9:", // cont_after_jump & send_end_bit_complete
+            "c.beqz a1, 10f", // done_sending_data
             "andi a3, a1, 7",
             "c.addi a1, -1",
-            "c.beqz a3, load_next_byte",
+            "c.beqz a3, 6b", // load next byte
             // Wait an extra few cycles.
             "c.j 1f; 1:",
-            "c.j send_inner_loop",
+            "c.j 7b",  // send_inner_loop
 
             ".balign 4",
-            "done_sending_data:",
+            "10:", // done_sending_data
             // BUT WAIT!! MAYBE WE NEED TO CRC!
-            "beqz t0, no_really_done_sending_data",
+            "beqz t0, 11f", // no_really_done_sending_data
             "srli t0, t0, 8", // reset poly - we don't want it anymore.
             "li a1, 7", // Load 8 more bits out
-            "beqz t0, send_inner_loop", //Second CRC byte
+            "beqz t0, 7b", //Second CRC byte  // send_inner_loop
             // First CRC byte
             "not s0, a2", // get read to send out the CRC.
-            "c.j send_inner_loop",
+            "c.j 7b",  // send_inner_loop
 
 
             ".balign 4",
-            "no_really_done_sending_data:",
+            "11:", // no_really_done_sending_data
 
             //	c.bnez a2, poly_function  TODO: Uncomment me!
 
@@ -377,19 +371,20 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "lw	s0, 0(sp)",
             "lw	s1, 4(sp)",
             "addi	sp,sp,16",
-            "ret",
+            "c.j 13f",
 
             ".balign 4",
             // TODO: This seems to be either 222 or 226 (not 224) in cases.
             // It's off by 2 clock cycles.  Probably OK, but, hmm.
-            "insert_stuffed_bit:",
+            "12:", // insert_stuffed_bit
             "nx6p3delay 3, a3",
             "xor s1, s1, t1",
             "c.li a4, 6", // reset bit stuffing.
             "c.nop",
             "c.nop",
             "sw s1, {BSHR_OFFSET}(a5)",
-            "c.j send_end_bit_complete",
+            "c.j 9b", // send_end_bit_complete
+            "13:",
             // Restore original assembler state. "Needed" to ensure the macro
             // doesn't pollute other sections, but in practice (almost) never an
             // issue
@@ -399,6 +394,22 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             USB_PIN_DM = const DM,
             BSHR_OFFSET = const 16, // Don't see a good way to get this from the pac?
             CFGLR_OFFSET = const 0,
+            inout("a0") data => _,
+            inout("a1") length => _,
+            inout("a2") poly_function => _,
+            inout("a3") token => _,
+
+            // Clobbers and Temporaries
+            out("a4") _,
+            out("a5") _,
+            out("t0") _,
+            out("t1") _,
+            out("t2") _,
+
+            // Still need to manually store/restore these, as they can't be used due to llvm stuff
+            // Unfortunately these are part of the compressed register, so we *really* care
+            //out("s0") _,
+            //out("s1") _,
         );
     }
 
