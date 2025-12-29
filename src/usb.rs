@@ -124,6 +124,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
         poly_function: u32,
         token: u32,
     ) {
+        let gpio_base = USB_BASE;
         asm!(
             ".macro nx6p3delay n, freereg",
             "li \\freereg, ((\\n) + 1)",
@@ -135,8 +136,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             "addi	sp,sp,-16",
             "sw	s0, 0(sp)",
             "sw	s1, 4(sp)",
-
-            "la a5, {USB_GPIO_BASE}",
 
             // ASAP: Turn the bus around and send our preamble + token.
             "c.lw a4, {CFGLR_OFFSET}(a5)",
@@ -389,7 +388,6 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             // doesn't pollute other sections, but in practice (almost) never an
             // issue
             ".purgem nx6p3delay",
-            USB_GPIO_BASE = const USB_BASE,
             USB_PIN_DP = const DP,
             USB_PIN_DM = const DM,
             BSHR_OFFSET = const 16, // Don't see a good way to get this from the pac?
@@ -398,10 +396,10 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             inout("a1") length => _,
             inout("a2") poly_function => _,
             inout("a3") token => _,
+            inout("a5") gpio_base => _,
 
             // Clobbers and Temporaries
             out("a4") _,
-            out("a5") _,
             out("t0") _,
             out("t1") _,
             out("t2") _,
@@ -814,7 +812,7 @@ impl<const USB_BASE: usize, const DP: u8, const DM: u8, const EPS: usize>
             INDR_OFFSET = const 8,
             USB_DMASK = const ((1<<(DP)) | 1<<(DM)),
             USB_BUFFER_SIZE = const 12, // Packet Type + 8 + CRC + Buffer
-            ENDPOINTS = const EPS, // TODO make configurable
+            ENDPOINTS = const EPS,
             // NOTE the following is *not* compile time defined
             // EXTI_BASE = const (EXTI.as_ptr()) as u32,
             EXTI_BASE = const 0x40010400,
